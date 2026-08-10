@@ -1,18 +1,7 @@
-name: Importar videos autorizados
+name: Import authorized videos
 
-on:
-  workflow_dispatch:
-    inputs:
-      max_batches:
-        description: "Quantidade de lotes (ate 3 videos por lote)"
-        required: true
-        default: "4"
-        type: choice
-        options:
-          - "1"
-          - "2"
-          - "3"
-          - "4"
+"on":
+  workflow_dispatch: {}
   schedule:
     - cron: "17 * * * *"
 
@@ -24,27 +13,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  import:
+  import-videos:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Baixar codigo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preparar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
-      - name: Instalar executor
+      - name: Install
         run: python -m pip install --disable-pip-version-check .
 
-      - name: Processar fila
+      - name: Process queue
         env:
-          NOVAK_API_BASE_URL: https://novak-reels.joao133762.chatgpt.site
-          NOVAK_IMPORTER_TOKEN: ${{ secrets.NOVAK_IMPORTER_TOKEN }}
-          NOVAK_SITES_AUTHORIZATION: ${{ secrets.NOVAK_SITES_AUTHORIZATION }}
-          NOVAK_MAX_BATCHES: ${{ inputs.max_batches || '4' }}
+          NOVAK_API_BASE_URL: "https://novak-reels.joao133762.chatgpt.site"
+          NOVAK_IMPORTER_TOKEN: "${{ secrets.NOVAK_IMPORTER_TOKEN }}"
+          NOVAK_SITES_AUTHORIZATION: "${{ secrets.NOVAK_SITES_AUTHORIZATION }}"
+          NOVAK_MAX_BATCHES: "4"
         run: python -m novak_importer
-
