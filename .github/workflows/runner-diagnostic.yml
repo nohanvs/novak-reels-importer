@@ -1,0 +1,10 @@
+name: Runner diagnostic
+
+on:
+  pull_request:
+
+jobs:
+  runner:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "GitHub Actions runner started"
