@@ -24,7 +24,7 @@ O workflow precisa de dois segredos no repositorio:
 | `NOVAK_IMPORTER_TOKEN` | Autentica o executor na API do NovaK Reels |
 | `NOVAK_SITES_AUTHORIZATION` | Autoriza a chamada automatica ao site privado |
 
-O executor roda automaticamente uma vez por hora e tambem pode ser iniciado pela aba **Actions**. A execucao manual permite escolher de um a quatro lotes, com ate tres videos por lote.
+O executor roda automaticamente uma vez por hora e tambem pode ser iniciado pela aba **Actions**. Cada execucao processa no maximo quatro lotes, com ate tres videos por lote.
 
 O workflow de verificacao roda os testes automaticamente em cada pull request e atualizacao da branch principal.
 
