@@ -16,7 +16,7 @@ Use somente vídeos próprios, autorizados ou de domínio público. A pessoa que
 
 ## Recriar o projeto no Vercel
 
-1. Entre no [Vercel Dashboard](https://vercel.com/dashboard), escolha **Add New → Project** e importe o repositório `nohanvs/novak-reels-importer) do GitHub, usando a branch `main`. Não é necessário escolher um framework; mantenha a raiz do repositório e faça o deploy.
+1. Entre no [Vercel Dashboard](https://vercel.com/dashboard), escolha **Add New → Project** e importe o repositório `nohanvs/novak-reels-importer` do GitHub, usando a branch `main`. Não é necessário escolher um framework; mantenha a raiz do repositório e faça o deploy.
 2. No Marketplace do Vercel, adicione **Upstash Redis** e crie/conecte uma base Redis ao projeto. A integração precisa disponibilizar `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN`.
 3. Crie um armazenamento **Vercel Blob** com acesso público para os vídeos dos Reels. O projeto precisa da variável `BLOB_READ_WRITE_TOKEN`.
 4. Em **Project → Settings → Environment Variables**, crie:
