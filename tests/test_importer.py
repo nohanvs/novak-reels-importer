@@ -21,6 +21,7 @@ class UrlValidationTests(unittest.TestCase):
         for value in (
             "https://www.twitch.tv/facada/clip/FunnyClip123",
             "https://twitch.tv/somechannel/clip/ABC-def_123",
+            "https://clips.twitch.tv/FunnyClip123",
         ):
             validate_twitch_clip_url(value)
             validate_source_url(value)
