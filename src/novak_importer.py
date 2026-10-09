@@ -5,8 +5,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import socket
 import ssl
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -19,7 +21,10 @@ from urllib.request import Request, urlopen
 MAX_VIDEO_BYTES = 95 * 1024 * 1024
 VIDEO_SUFFIXES = {".mp4": "video/mp4", ".mov": "video/quicktime"}
 TIKTOK_HOST_RE = re.compile(r"(^|\.)tiktok\.com$", re.IGNORECASE)
+TWITCH_HOST_RE = re.compile(r"(^|\.)twitch\.tv$", re.IGNORECASE)
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+WATERMARK_TEXT = "twitch.tv/facada"
+HASHTAG = "#facadarp"
 
 LOGGER = logging.getLogger("novak_importer")
 
@@ -33,7 +38,7 @@ class Config:
     api_base_url: str
     importer_token: str
     sites_authorization: str | None = None
-    max_batches: int = 4
+    max_batches: int = 0
     request_timeout_seconds: int = 45
     download_timeout_seconds: int = 300
 
@@ -55,7 +60,7 @@ class Config:
             api_base_url=base_url,
             importer_token=token,
             sites_authorization=sites_auth,
-            max_batches=_bounded_int("NOVAK_MAX_BATCHES", default=4, minimum=1, maximum=10),
+            max_batches=_bounded_int("NOVAK_MAX_BATCHES", default=0, minimum=0, maximum=0),
             request_timeout_seconds=_bounded_int("NOVAK_REQUEST_TIMEOUT", default=45, minimum=5, maximum=120),
             download_timeout_seconds=_bounded_int("NOVAK_DOWNLOAD_TIMEOUT", default=300, minimum=30, maximum=600),
         )
@@ -86,7 +91,7 @@ class ApiClient:
                 raise ImporterError("API returned an invalid job id")
             if not isinstance(source_url, str):
                 raise ImporterError("API returned an invalid source URL")
-            validate_tiktok_url(source_url)
+            validate_source_url(source_url)
             jobs.append(Job(id=job_id, source_url=source_url))
         return jobs
 
@@ -95,10 +100,10 @@ class ApiClient:
             raise ImporterError("Invalid job id")
         file_size = video_path.stat().st_size
         if file_size < 1 or file_size > MAX_VIDEO_BYTES:
-            raise ImporterError("Downloaded video must be between 1 byte and 95 MB")
+            raise ImporterError("Processed video must be between 1 byte and 95 MB")
         content_type = VIDEO_SUFFIXES.get(video_path.suffix.lower())
         if not content_type:
-            raise ImporterError("Downloaded file is not MP4 or MOV")
+            raise ImporterError("Processed file is not MP4 or MOV")
 
         target = urlparse(urljoin(f"{self.config.api_base_url}/", f"api/importer/jobs/{job_id}"))
         connection_type = http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
@@ -110,7 +115,9 @@ class ApiClient:
                 connection.putheader(key, value)
             connection.putheader("Content-Type", content_type)
             connection.putheader("Content-Length", str(file_size))
-            connection.putheader("X-NovaK-Watermark", "unknown")
+            connection.putheader("X-NovaK-Watermark", WATERMARK_TEXT)
+            connection.putheader("X-NovaK-Hashtags", HASHTAG)
+            connection.putheader("X-NovaK-Auto-Publish", "true")
             connection.endheaders()
             with video_path.open("rb") as source:
                 while chunk := source.read(1024 * 1024):
@@ -145,7 +152,7 @@ class ApiClient:
         headers = {
             "Authorization": f"Bearer {self.config.importer_token}",
             "Accept": "application/json",
-            "User-Agent": "NovaK-Reels-Importer/0.1",
+            "User-Agent": "NovaK-Reels-Importer/0.2",
         }
         if self.config.sites_authorization:
             headers["OAI-Sites-Authorization"] = f"Bearer {self.config.sites_authorization}"
@@ -174,7 +181,7 @@ class VideoDownloader:
         self.timeout_seconds = timeout_seconds
 
     def download(self, source_url: str, destination: Path) -> Path:
-        validate_tiktok_url(source_url)
+        validate_source_url(source_url)
         try:
             from yt_dlp import YoutubeDL
             from yt_dlp.utils import DownloadError
@@ -209,16 +216,50 @@ class VideoDownloader:
         return video_path
 
 
+class VideoEditor:
+    def edit(self, source: Path, destination: Path) -> Path:
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise ImporterError("ffmpeg is not installed")
+        filter_graph = (
+            "drawtext="
+            "text='twitch.tv/facada':" 
+            "x=(w-text_w)/2:" 
+            "y=h-text_h-48:" 
+            "fontsize=28:" 
+            "fontcolor=white:" 
+            "borderw=3:" 
+            "bordercolor=black"
+        )
+        command = [
+            ffmpeg, "-y", "-i", str(source),
+            "-vf", filter_graph,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-c:a", "aac", "-movflags", "+faststart",
+            str(destination),
+        ]
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ImporterError(f"Video editing failed: {type(error).__name__}") from error
+        if completed.returncode != 0:
+            raise ImporterError("Video editing failed")
+        if not destination.exists() or destination.stat().st_size < 1 or destination.stat().st_size > MAX_VIDEO_BYTES:
+            raise ImporterError("Edited video must be between 1 byte and 95 MB")
+        return destination
+
+
 class Worker:
-    def __init__(self, config: Config, client: ApiClient, downloader: VideoDownloader):
+    def __init__(self, config: Config, client: ApiClient, downloader: VideoDownloader, editor: VideoEditor | None = None):
         self.config = config
         self.client = client
         self.downloader = downloader
+        self.editor = editor or VideoEditor()
 
     def run(self) -> tuple[int, int]:
         succeeded = 0
         failed = 0
-        for _ in range(self.config.max_batches):
+        while True:
             jobs = self.client.claim_jobs()
             if not jobs:
                 break
@@ -226,12 +267,15 @@ class Worker:
                 LOGGER.info("Processing job %s", job.id)
                 try:
                     with tempfile.TemporaryDirectory(prefix="novak-import-") as directory:
-                        video_path = self.downloader.download(job.source_url, Path(directory))
-                        result = self.client.upload(job.id, video_path)
+                        workdir = Path(directory)
+                        video_path = self.downloader.download(job.source_url, workdir)
+                        edited_path = workdir / "edited.mp4"
+                        self.editor.edit(video_path, edited_path)
+                        result = self.client.upload(job.id, edited_path)
                         if result.get("accepted") is not True:
                             raise ImporterError("API did not accept the video")
                     succeeded += 1
-                    LOGGER.info("Job %s is ready for human review", job.id)
+                    LOGGER.info("Job %s accepted with watermark and %s", job.id, HASHTAG)
                 except Exception as error:  # keep one bad item from blocking the remaining queue
                     failed += 1
                     safe_error = sanitize_error(str(error) or type(error).__name__)
@@ -240,15 +284,39 @@ class Worker:
         return succeeded, failed
 
 
-def validate_tiktok_url(value: str) -> None:
+def validate_source_url(value: str) -> None:
     if len(value) > 2048:
-        raise ImporterError("TikTok URL is too long")
+        raise ImporterError("Source URL is too long")
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").rstrip(".")
+    if parsed.scheme != "https" or parsed.username or parsed.password:
+        raise ImporterError("Only HTTPS source URLs without credentials are allowed")
+    if TIKTOK_HOST_RE.search(hostname):
+        validate_tiktok_url(value)
+        return
+    if TWITCH_HOST_RE.search(hostname):
+        validate_twitch_clip_url(value)
+        return
+    raise ImporterError("Only HTTPS TikTok and Twitch clip URLs are allowed")
+
+
+def validate_tiktok_url(value: str) -> None:
     parsed = urlparse(value)
     hostname = (parsed.hostname or "").rstrip(".")
     if parsed.scheme != "https" or not TIKTOK_HOST_RE.search(hostname) or parsed.username or parsed.password:
         raise ImporterError("Only HTTPS TikTok URLs are allowed")
     if not parsed.path or parsed.path == "/":
         raise ImporterError("TikTok URL must point to a video")
+
+
+def validate_twitch_clip_url(value: str) -> None:
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").rstrip(".")
+    if parsed.scheme != "https" or not TWITCH_HOST_RE.search(hostname) or parsed.username or parsed.password:
+        raise ImporterError("Only HTTPS Twitch URLs are allowed")
+    path = parsed.path.rstrip("/")
+    if not path or not re.search(r"(?:^|/)clip/[^/]+$", path, re.IGNORECASE):
+        raise ImporterError("Twitch URL must point to a clip")
 
 
 def sanitize_error(value: str) -> str:
@@ -284,9 +352,9 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         config = Config.from_env()
-        worker = Worker(config, ApiClient(config), VideoDownloader(config.download_timeout_seconds))
+        worker = Worker(config, ApiClient(config), VideoDownloader(config.download_timeout_seconds), VideoEditor())
         succeeded, failed = worker.run()
-        LOGGER.info("Finished: %s ready, %s failed", succeeded, failed)
+        LOGGER.info("Finished: %s accepted, %s failed", succeeded, failed)
         return 1 if failed else 0
     except ImporterError as error:
         LOGGER.error("Importer configuration failed: %s", sanitize_error(str(error)))
