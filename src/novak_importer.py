@@ -106,7 +106,7 @@ class ApiClient:
         if not os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip():
             raise ImporterError("BLOB_READ_WRITE_TOKEN is required to upload the processed video")
 
-        upload_script = Path(__file__).resolve().parents[1] / "scripts" / "upload-blob.mjs"
+        upload_script = Path(os.environ.get("GITHUB_WORKSPACE", str(Path.cwd()))).resolve() / "scripts" / "upload-blob.mjs"
         if not upload_script.exists():
             raise ImporterError("Vercel Blob uploader script is missing")
         try:
@@ -146,7 +146,7 @@ class ApiClient:
         try:
             self._json_request(
                 "PATCH",
-                f"/api/importer/jobs/{job_id}",
+                f"/api/worker/importer/jobs/{job_id}",
                 {"error": safe_error, "watermarked": "watermark" in safe_error.lower()},
             )
         except ImporterError as report_error:
