@@ -22,7 +22,7 @@ Use somente vídeos próprios, autorizados ou de domínio público. A pessoa que
 4. Em **Project → Settings → Environment Variables**, crie:
    - `POST_PASSWORD`: a senha que você vai digitar na página para autorizar um envio.
    - `NOVAK_IMPORTER_TOKEN`: segredo aleatório longo, com pelo menos 32 caracteres.
-   - Confirme que as integrações disponibilizaram `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` e `BLOB_READ_WRITE_TOKEN).
+   - Confirme que as integrações disponibilizaram `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` e `BLOB_READ_WRITE_TOKEN`.
 5. Faça um novo deploy depois de conectar as integrações e salvar as variáveis.
 
 ## Segredos do GitHub Actions
