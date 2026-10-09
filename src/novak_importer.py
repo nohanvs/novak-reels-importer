@@ -101,39 +101,43 @@ class ApiClient:
         file_size = video_path.stat().st_size
         if file_size < 1 or file_size > MAX_VIDEO_BYTES:
             raise ImporterError("Processed video must be between 1 byte and 95 MB")
-        content_type = VIDEO_SUFFIXES.get(video_path.suffix.lower())
-        if not content_type:
+        if video_path.suffix.lower() not in VIDEO_SUFFIXES:
             raise ImporterError("Processed file is not MP4 or MOV")
+        if not os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip():
+            raise ImporterError("BLOB_READ_WRITE_TOKEN is required to upload the processed video")
 
-        target = urlparse(urljoin(f"{self.config.api_base_url}/", f"api/importer/jobs/{job_id}"))
-        connection_type = http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
-        connection = connection_type(target.hostname, target.port, timeout=self.config.request_timeout_seconds)
-        path = target.path + (f"?{target.query}" if target.query else "")
+        upload_script = Path(__file__).resolve().parents[1] / "scripts" / "upload-blob.mjs"
+        if not upload_script.exists():
+            raise ImporterError("Vercel Blob uploader script is missing")
         try:
-            connection.putrequest("PUT", path)
-            for key, value in self._headers().items():
-                connection.putheader(key, value)
-            connection.putheader("Content-Type", content_type)
-            connection.putheader("Content-Length", str(file_size))
-            connection.putheader("X-NovaK-Watermark", WATERMARK_TEXT)
-            connection.putheader("X-NovaK-Hashtags", HASHTAG)
-            connection.putheader("X-NovaK-Auto-Publish", "true")
-            connection.endheaders()
-            with video_path.open("rb") as source:
-                while chunk := source.read(1024 * 1024):
-                    connection.send(chunk)
-            response = connection.getresponse()
-            body = response.read(1024 * 1024)
-        except (OSError, socket.timeout, ssl.SSLError) as error:
-            raise ImporterError(f"Upload failed: {type(error).__name__}") from error
-        finally:
-            connection.close()
+            uploaded = subprocess.run(
+                ["node", str(upload_script), str(video_path)],
+                capture_output=True,
+                text=True,
+                timeout=240,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ImporterError(f"Blob upload failed: {type(error).__name__}") from error
+        if uploaded.returncode != 0:
+            raise ImporterError("Processed video could not be uploaded to public storage")
 
-        payload = _decode_json(body)
-        if response.status < 200 or response.status >= 300:
-            reason = payload.get("error") or payload.get("reason") or f"HTTP {response.status}"
-            raise ImporterError(f"API rejected upload: {reason}")
-        return payload
+        try:
+            upload_result = json.loads(uploaded.stdout.strip())
+        except (json.JSONDecodeError, AttributeError) as error:
+            raise ImporterError("Blob uploader returned invalid JSON") from error
+        video_url = upload_result.get("url") if isinstance(upload_result, dict) else None
+        if not isinstance(video_url, str) or not video_url.startswith("https://"):
+            raise ImporterError("Blob uploader did not return a public HTTPS URL")
+
+        result = self._json_request(
+            "PATCH",
+            f"/api/worker/importer/jobs/{job_id}",
+            {"status": "processed", "videoUrl": video_url, "caption": HASHTAG},
+        )
+        if result.get("accepted") is not True:
+            raise ImporterError("API did not accept the processed video")
+        return result
 
     def record_failure(self, job_id: str, error: str) -> None:
         if not SAFE_JOB_ID_RE.fullmatch(job_id):
