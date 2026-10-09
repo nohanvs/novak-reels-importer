@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from novak_importer import Config, ImporterError, Job, Worker, sanitize_error, validate_tiktok_url
+from novak_importer import Config, ImporterError, Job, Worker, sanitize_error, validate_source_url, validate_tiktok_url, validate_twitch_clip_url
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -17,19 +17,29 @@ class UrlValidationTests(unittest.TestCase):
         ):
             validate_tiktok_url(value)
 
+    def test_accepts_twitch_clip_urls(self) -> None:
+        for value in (
+            "https://www.twitch.tv/facada/clip/FunnyClip123",
+            "https://twitch.tv/somechannel/clip/ABC-def_123",
+        ):
+            validate_twitch_clip_url(value)
+            validate_source_url(value)
+
     def test_rejects_lookalike_hosts_and_credentials(self) -> None:
         for value in (
             "https://tiktok.com.evil.example/@x/video/1",
             "http://www.tiktok.com/@x/video/1",
             "https://user:pass@www.tiktok.com/@x/video/1",
             "https://www.tiktok.com/",
+            "https://www.twitch.tv.evil.example/x/clip/ABC",
+            "https://www.twitch.tv/channel/not-a-clip",
         ):
             with self.subTest(value=value), self.assertRaises(ImporterError):
-                validate_tiktok_url(value)
+                validate_source_url(value)
 
 
 class ConfigTests(unittest.TestCase):
-    def test_requires_https_origin_and_long_token(self) -> None:
+    def test_unlimited_batches_are_default(self) -> None:
         env = {
             "NOVAK_API_BASE_URL": "https://novak.example",
             "NOVAK_IMPORTER_TOKEN": "x" * 32,
@@ -37,7 +47,7 @@ class ConfigTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             config = Config.from_env()
         self.assertEqual(config.api_base_url, "https://novak.example")
-        self.assertEqual(config.max_batches, 4)
+        self.assertEqual(config.max_batches, 0)
 
     def test_rejects_path_in_base_url(self) -> None:
         env = {
@@ -74,24 +84,30 @@ class FakeDownloader:
         return path
 
 
+class FakeEditor:
+    def edit(self, source: Path, destination: Path) -> Path:
+        destination.write_bytes(source.read_bytes())
+        return destination
+
+
 class WorkerTests(unittest.TestCase):
     def test_processes_remaining_jobs_after_one_failure(self) -> None:
         jobs = [
             Job("one", "https://www.tiktok.com/@x/video/1"),
             Job("two", "https://www.tiktok.com/@x/video/fail"),
-            Job("three", "https://www.tiktok.com/@x/video/3"),
+            Job("three", "https://www.twitch.tv/x/clip/three"),
         ]
         client = FakeClient([jobs, []])
         config = Config("https://novak.example", "x" * 32)
-        result = Worker(config, client, FakeDownloader()).run()
+        result = Worker(config, client, FakeDownloader(), FakeEditor()).run()
         self.assertEqual(result, (2, 1))
         self.assertEqual(client.uploaded, ["one", "three"])
         self.assertEqual(client.failures[0][0], "two")
 
     def test_stops_when_queue_is_empty(self) -> None:
         client = FakeClient([[]])
-        config = Config("https://novak.example", "x" * 32, max_batches=10)
-        self.assertEqual(Worker(config, client, FakeDownloader()).run(), (0, 0))
+        config = Config("https://novak.example", "x" * 32)
+        self.assertEqual(Worker(config, client, FakeDownloader(), FakeEditor()).run(), (0, 0))
 
 
 class SanitizationTests(unittest.TestCase):
