@@ -20,7 +20,8 @@ async function main() {
         access: "public",
         token,
         addRandomSuffix: true,
-        contentType: "video/mp4"
+        contentType: "video/mp4",
+        multipart: true
       }
     );
     process.stdout.write(JSON.stringify({ url: result.url }) + "\n");
