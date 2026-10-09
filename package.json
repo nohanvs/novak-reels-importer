@@ -1,0 +1,11 @@
+{
+  "name": "novak-reels",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vercel-build": "node -e \"console.log('NovaK Reels API ready')\""
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.0.0"
+  }
+}
