@@ -319,7 +319,9 @@ def validate_twitch_clip_url(value: str) -> None:
     if parsed.scheme != "https" or not TWITCH_HOST_RE.search(hostname) or parsed.username or parsed.password:
         raise ImporterError("Only HTTPS Twitch URLs are allowed")
     path = parsed.path.rstrip("/")
-    if not path or not re.search(r"(?:^|/)clip/[^/]+$", path, re.IGNORECASE):
+    is_short_clip_url = hostname.lower() == "clips.twitch.tv" and path.strip("/") != ""
+    is_channel_clip_url = bool(re.search(r"(?:^|/)clip/[^/]+$", path, re.IGNORECASE))
+    if not path or not (is_short_clip_url or is_channel_clip_url):
         raise ImporterError("Twitch URL must point to a clip")
 
 
