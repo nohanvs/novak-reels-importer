@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=78,<79"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novak-reels-importer"
+version = "0.1.0"
+description = "Executor privado de importacao de videos autorizados para o NovaK Reels"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "yt-dlp==2026.7.4",
+]
+
+[project.scripts]
+novak-importer = "novak_importer:main"
+
+[tool.setuptools]
+py-modules = ["novak_importer"]
+package-dir = {"" = "src"}
+

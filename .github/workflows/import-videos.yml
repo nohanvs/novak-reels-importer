@@ -1,0 +1,37 @@
+name: Import authorized videos
+
+"on":
+  workflow_dispatch: {}
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: novak-reels-importer
+  cancel-in-progress: false
+
+jobs:
+  import-videos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install --disable-pip-version-check .
+
+      - name: Process queue
+        env:
+          NOVAK_API_BASE_URL: "https://novak-reels.joao133762.chatgpt.site"
+          NOVAK_IMPORTER_TOKEN: "${{ secrets.NOVAK_IMPORTER_TOKEN }}"
+          NOVAK_SITES_AUTHORIZATION: "${{ secrets.NOVAK_SITES_AUTHORIZATION }}"
+          NOVAK_MAX_BATCHES: "4"
+        run: python -m novak_importer
