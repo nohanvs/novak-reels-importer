@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <title>NovaK Reels</title>
+  <style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#101010;font-family:Arial,Helvetica,sans-serif;color:#f5f5f5;padding:20px}.card{width:min(100%,480px);padding:28px;border:1px solid #303030;border-radius:16px;background:#181818;box-shadow:0 18px 60px #0005}h1{margin:0 0 8px;font-size:27px;letter-spacing:-.5px}p{margin:0 0 22px;color:#aaa;line-height:1.45}.field{display:block;width:100%;margin:0 0 12px;padding:15px;border:1px solid #414141;border-radius:10px;background:#0e0e0e;color:#fff;font-size:16px;outline:none}.field:focus{border-color:#a5a5a5}.confirm{display:flex;gap:10px;align-items:flex-start;color:#aaa;font-size:13px;line-height:1.4;margin:7px 0 16px}.confirm input{margin-top:2px;accent-color:#fff}button{width:100%;padding:15px;border:0;border-radius:10px;background:#f5f5f5;color:#111;font-weight:700;font-size:16px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}#status{min-height:24px;margin-top:16px;color:#bbb;font-size:14px;line-height:1.45}.ok{color:#7ee787!important}.err{color:#ff7b72!important}.hint{font-size:12px;color:#777;margin-top:12px}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>NovaK Reels</h1>
+    <p>Cole o link do TikTok ou de um clip da Twitch e toque em Postar.</p>
+    <form id="form">
+      <input class="field" id="url" type="url" placeholder="https://www.twitch.tv/.../clip/..." autocomplete="url" required maxlength="2048">
+      <input class="field" id="password" type="password" placeholder="Senha de postagem" autocomplete="current-password" required>
+      <label class="confirm"><input id="authorized" type="checkbox" required><span>Confirmo que tenho autorização para usar e publicar este vídeo.</span></label>
+      <button id="button" type="submit">Postar</button>
+    </form>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div class="hint">O vídeo entra na fila, recebe a marca d'água e a hashtag #facadarp. Use somente conteúdo autorizado.</div>
+  </main>
+  <script>
+    const form = document.getElementById("form");
+    const urlInput = document.getElementById("url");
+    const passwordInput = document.getElementById("password");
+    const authorizedInput = document.getElementById("authorized");
+    const button = document.getElementById("button");
+    const status = document.getElementById("status");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      status.className = "";
+      status.textContent = "Enviando para a fila...";
+      try {
+        const response = await fetch("/api/post", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceUrl: urlInput.value.trim(),
+            password: passwordInput.value,
+            authorized: authorizedInput.checked
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Não foi possível adicionar o vídeo.");
+        status.className = "ok";
+        status.textContent = "Link adicionado à fila. O processamento e a publicação acontecem automaticamente quando o GitHub Actions executar.";
+        urlInput.value = "";
+        passwordInput.value = "";
+        authorizedInput.checked = false;
+      } catch (error) {
+        status.className = "err";
+        status.textContent = error.message || "Erro ao enviar.";
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
