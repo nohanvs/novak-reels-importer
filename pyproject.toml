@@ -14,8 +14,8 @@ dependencies = [
 
 [project.scripts]
 novak-importer = "novak_importer:main"
+novak-publisher = "novak_publisher:main"
 
 [tool.setuptools]
-py-modules = ["novak_importer"]
+py-modules = ["novak_importer", "novak_publisher"]
 package-dir = {"" = "src"}
-
