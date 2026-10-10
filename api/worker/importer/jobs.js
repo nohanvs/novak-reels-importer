@@ -8,6 +8,32 @@ import {
   workerAuthorized
 } from "../../../lib/queue.js";
 
+const STALE_AFTER_MS = 30 * 60 * 1000;
+
+async function recoverStaleJobs() {
+  const ids = await redis(["LRANGE", IMPORT_PROCESSING, "0", "-1"]);
+  if (!Array.isArray(ids)) return;
+  const now = Date.now();
+  for (const id of ids) {
+    if (!safeJobId(id)) {
+      await redis(["LREM", IMPORT_PROCESSING, "0", id]);
+      continue;
+    }
+    const job = await readJob(id);
+    if (!job) {
+      await redis(["LREM", IMPORT_PROCESSING, "0", id]);
+      continue;
+    }
+    const claimedAt = Date.parse(String(job.claimedAt || ""));
+    if (!Number.isFinite(claimedAt) || now - claimedAt < STALE_AFTER_MS) continue;
+    job.status = "queued";
+    delete job.claimedAt;
+    await saveJob(job);
+    await redis(["LREM", IMPORT_PROCESSING, "0", id]);
+    await redis(["LPUSH", IMPORT_QUEUE, id]);
+  }
+}
+
 export default async function handler(request, response) {
   if (!workerAuthorized(request)) return response.status(401).json({ error: "Não autorizado." });
   if (request.method !== "GET") {
@@ -15,6 +41,7 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: "Método não permitido." });
   }
   try {
+    await recoverStaleJobs();
     const id = await redis(["RPOPLPUSH", IMPORT_QUEUE, IMPORT_PROCESSING]);
     if (!safeJobId(id)) return response.status(200).json({ jobs: [] });
     const job = await readJob(id);
