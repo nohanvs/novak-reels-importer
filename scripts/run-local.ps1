@@ -93,6 +93,48 @@ function Configure-InstagramCredentials {
   $env:INSTAGRAM_ACCESS_TOKEN = Convert-SecureToPlainText $secureInstagramToken
 }
 
+function Ensure-ImporterToken {
+  $config = $null
+  if (Test-Path $LocalConfigPath) {
+    try { $config = Get-Content -Raw -LiteralPath $LocalConfigPath | ConvertFrom-Json } catch { $config = $null }
+  }
+
+  # When Vercel returns a readable value, keep it locally encrypted for later cycles.
+  $current = ([string]$env:NOVAK_IMPORTER_TOKEN).Trim()
+  if ($current.Length -ge 32) {
+    $secure = ConvertTo-SecureString $current -AsPlainText -Force
+    if (!$config) { $config = [pscustomobject]@{} }
+    $config | Add-Member -NotePropertyName ImporterTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secure) -Force
+    Save-LocalConfig $config
+    $env:NOVAK_IMPORTER_TOKEN = $current
+    return
+  }
+
+  # Sensitive Vercel values may be masked on local pull; prefer the DPAPI-protected
+  # copy entered by the user, which must match the value saved in Vercel Production.
+  if ($config -and $config.ImporterTokenProtected) {
+    $secureSaved = ConvertTo-SecureString ([string]$config.ImporterTokenProtected)
+    $saved = Convert-SecureToPlainText $secureSaved
+    if ($saved.Trim().Length -ge 32) {
+      $env:NOVAK_IMPORTER_TOKEN = $saved.Trim()
+      return
+    }
+  }
+
+  Write-Host ""
+  Write-Host "A variável NOVAK_IMPORTER_TOKEN do Vercel veio vazia/curta. Use aqui exatamente o mesmo token salvo no Vercel -> Environment Variables -> Production." -ForegroundColor Yellow
+  Write-Host "A entrada fica oculta e será criptografada para este usuário do Windows."
+  $secureToken = Read-Host "Cole NOVAK_IMPORTER_TOKEN (mínimo 32 caracteres; não será exibido)" -AsSecureString
+  if ($secureToken.Length -lt 32) {
+    throw "NOVAK_IMPORTER_TOKEN precisa ter pelo menos 32 caracteres."
+  }
+
+  if (!$config) { $config = [pscustomobject]@{} }
+  $config | Add-Member -NotePropertyName ImporterTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secureToken) -Force
+  Save-LocalConfig $config
+  $env:NOVAK_IMPORTER_TOKEN = Convert-SecureToPlainText $secureToken
+}
+
 function Ensure-BlobCredentials {
   if ($env:BLOB_READ_WRITE_TOKEN -or ($env:VERCEL_OIDC_TOKEN -and $env:BLOB_STORE_ID)) {
     return
@@ -207,10 +249,11 @@ if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar dependências Node." }
 if (!(Pull-VercelEnvironment)) {
   throw "Não consegui baixar as variáveis de produção do Vercel. Verifique o login e o vínculo do projeto e execute novamente."
 }
+Ensure-ImporterToken
 Configure-InstagramCredentials
 Ensure-BlobCredentials
 
-if (!$env:NOVAK_IMPORTER_TOKEN -or !$env:UPSTASH_REDIS_REST_URL -or !$env:UPSTASH_REDIS_REST_TOKEN) {
+if (!$env:NOVAK_IMPORTER_TOKEN -or $env:NOVAK_IMPORTER_TOKEN.Trim().Length -lt 32 -or !$env:UPSTASH_REDIS_REST_URL -or !$env:UPSTASH_REDIS_REST_TOKEN) {
   throw "Faltam NOVAK_IMPORTER_TOKEN ou credenciais do Upstash na configuração Production do Vercel."
 }
 if (!$env:BLOB_READ_WRITE_TOKEN -and !($env:VERCEL_OIDC_TOKEN -and $env:BLOB_STORE_ID)) {
@@ -226,6 +269,7 @@ Write-Host ""
 while ($true) {
   if (((Get-Date) - $lastRefresh).TotalMinutes -ge 30) {
     if (Pull-VercelEnvironment) {
+      try { Ensure-ImporterToken } catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
       try { Ensure-BlobCredentials } catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
       $lastRefresh = Get-Date
       Write-Host "Credenciais Vercel atualizadas."
