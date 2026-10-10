@@ -48,7 +48,22 @@ Os dois últimos segredos já podem existir no repositório; confirme que contin
 - Se o Actions reclamar de configuração, confira se `NOVAK_API_BASE_URL`, `NOVAK_IMPORTER_TOKEN` e `BLOB_READ_WRITE_TOKEN` estão presentes e se os dois tokens correspondentes são iguais no Vercel e no GitHub.
 - Os trabalhos processados e seu estado são mantidos por 30 dias no Redis. Os vídeos públicos do Blob não são removidos automaticamente por este MVP; apague-os no painel do Blob quando não forem mais necessários.
 
-## Desenvolvimento local
+## Executor local no Windows (sem GitHub Actions)
+
+Este modo mantém o site e a fila no Vercel/Upstash, mas faz o download, a marca d'água e a publicação no seu próprio computador. Não usa minutos do GitHub Actions. O computador precisa permanecer ligado e esta janela precisa continuar aberta para processar a fila.
+
+1. Abra o repositório no GitHub e clique em **Code → Download ZIP**. Extraia a pasta em um local do seu computador.
+2. Instale, se ainda não tiver, [Python 3.12](https://www.python.org/downloads/windows/) (marque **Add Python to PATH**), [Node.js LTS](https://nodejs.org/en/download) e [FFmpeg para Windows](https://www.gyan.dev/ffmpeg/builds/). O FFmpeg precisa estar disponível no PATH.
+3. Dentro da pasta extraída, dê dois cliques em **INICIAR_LOCAL.bat**.
+4. Na primeira execução, o programa instala as dependências, pede que você entre no Vercel/ligue o projeto `novak-reels-importer` e baixa as variáveis de Production. Não compartilhe a janela enquanto ela mostrar dados confidenciais.
+5. Quando solicitado, informe `INSTAGRAM_USER_ID` e cole o `INSTAGRAM_ACCESS_TOKEN). A entrada do token fica oculta e ele é armazenado criptografado para o seu usuário do Windows. Se o token existe somente como secret do GitHub, o GitHub não mostra o valor original; recupere ou gere um token válido na sua conta de desenvolvedor da Meta: https://developers.facebook.com/apps/.
+6. Deixe a janela aberta. O executor consulta a fila a cada 60 segundos. Pressione **Ctrl+C** para parar.
+
+O script atualiza as variáveis do Vercel periodicamente para renovar a autenticação OIDC do Blob. Se a conta não permitir o login do Vercel CLI ou a leitura das variáveis Production, o script exibirá o erro.
+
+Os arquivos locais `.vercel.local.env`, `.novak-local.json`, `.vercel/`, `.env.local`, `.venv/` e `node_modules/` são ignorados pelo Git. **Nunca envie esses arquivos, tokens ou senhas para o repositório público.** O código público não deve conter credenciais; use somente vídeos próprios ou que você tenha autorização para publicar.
+
+## Desenvolvimento/testes locais
 
 Requer Python 3.11+, Node.js 20+ e FFmpeg.
 
