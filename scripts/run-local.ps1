@@ -125,6 +125,25 @@ Write-Host "=== NovaK Reels - executor local para Windows ===" -ForegroundColor 
 Write-Host "Esse programa fica consultando a fila e processa os vídeos neste PC."
 Write-Host ""
 
+# Try to install missing prerequisites automatically when Windows Package Manager is available.
+$missingPackages = @()
+if (!(Test-Command "node") -or !(Test-Command "npm")) { $missingPackages += @{ id = "OpenJS.NodeJS.LTS"; name = "Node.js LTS" } }
+if (!(Test-Command "python")) { $missingPackages += @{ id = "Python.Python.3.12"; name = "Python 3.12" } }
+if (!(Test-Command "ffmpeg")) { $missingPackages += @{ id = "Gyan.FFmpeg.Shared"; name = "FFmpeg" } }
+
+if ($missingPackages.Count -gt 0 -and (Test-Command "winget")) {
+  foreach ($package in $missingPackages) {
+    Write-Host ("Instalando " + $package.name + " por meio do winget...") -ForegroundColor Cyan
+    & winget install --exact --id $package.id --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host ("Não consegui instalar " + $package.name + " automaticamente.") -ForegroundColor Yellow
+    }
+  }
+  Write-Host ""
+  Write-Host "Feche esta janela e abra INICIAR_LOCAL.bat novamente para o Windows atualizar o PATH." -ForegroundColor Green
+  exit 0
+}
+
 if (!(Test-Command "node") -or !(Test-Command "npm")) {
   Write-Host "Instale Node.js LTS e abra esta janela novamente:" -ForegroundColor Red
   Write-Host "https://nodejs.org/en/download"
