@@ -62,7 +62,11 @@ class HttpJson:
             raw = error.read(2 * 1024 * 1024)
             try:
                 payload = json.loads(raw.decode("utf-8"))
-                detail = payload.get("error", {}).get("message") or payload.get("error") or f"HTTP {error.code}"
+                api_error = payload.get("error")
+                if isinstance(api_error, dict):
+                    detail = api_error.get("message") or api_error or f"HTTP {error.code}"
+                else:
+                    detail = api_error or f"HTTP {error.code}"
             except Exception:
                 detail = f"HTTP {error.code}"
             raise PublisherError(str(detail)[:300]) from error
