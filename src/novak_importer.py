@@ -77,7 +77,7 @@ class ApiClient:
         self.config = config
 
     def claim_jobs(self) -> list[Job]:
-        payload = self._json_request("GET", "/api/importer/jobs")
+        payload = self._json_request("GET", "/api/worker/importer/jobs")
         raw_jobs = payload.get("jobs")
         if not isinstance(raw_jobs, list):
             raise ImporterError("API returned an invalid jobs payload")
