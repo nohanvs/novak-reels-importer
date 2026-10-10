@@ -2,6 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { put } from "@vercel/blob";
 
+function safeError(error) {
+  return String(error?.message || error || "unknown Blob error")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/token[=:]\s*\S+/gi, "token=[redacted]")
+    .replace(/\s+/g, " ")
+    .slice(0, 300);
+}
+
 async function main() {
   const filePath = process.argv[2];
   const token = process.env.BLOB_READ_WRITE_TOKEN || "";
@@ -26,9 +34,6 @@ async function main() {
       multipart: true
     };
 
-    // Vercel OIDC is preferred when both an OIDC token and store ID exist.
-    // This also lets the local Windows worker use short-lived credentials
-    // refreshed by "vercel env pull", without needing a permanent blob token.
     if (useOidc) {
       options.oidcToken = oidcToken;
       options.storeId = storeId;
@@ -42,8 +47,8 @@ async function main() {
       options
     );
     process.stdout.write(JSON.stringify({ url: result.url }) + "\n");
-  } catch {
-    process.stderr.write("Blob upload failed. Check Blob credentials and access.\n");
+  } catch (error) {
+    process.stderr.write(`Blob upload failed: ${safeError(error)}\n`);
     process.exitCode = 1;
   }
 }
