@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novak-reels-importer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Worker de processamento e publicação do NovaK Reels"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "yt-dlp==2026.7.4",
+  "yt-dlp[default]==2026.8.19",
 ]
 
 [project.scripts]
