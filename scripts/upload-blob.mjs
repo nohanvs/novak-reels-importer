@@ -13,13 +13,13 @@ function safeError(error) {
 async function main() {
   const filePath = process.argv[2];
   const token = process.env.BLOB_READ_WRITE_TOKEN || "";
-  const oidcToken = process.env.VERCEL_OIDC_TOKEN || "";
-  const storeId = process.env.BLOB_STORE_ID || "";
-  const useOidc = Boolean(oidcToken && storeId);
 
-  if (!filePath || (!token && !useOidc)) {
+  // The local executor must not silently select Vercel OIDC credentials.
+  // OIDC tokens are environment-scoped; this project currently grants the
+  // Blob store to production/preview, which makes local development fail.
+  if (!filePath || !token) {
     process.stderr.write(
-      "Blob uploader needs BLOB_READ_WRITE_TOKEN or VERCEL_OIDC_TOKEN plus BLOB_STORE_ID.\n"
+      "Blob uploader needs BLOB_READ_WRITE_TOKEN for local execution.\n"
     );
     process.exitCode = 2;
     return;
@@ -27,24 +27,16 @@ async function main() {
 
   try {
     const bytes = await readFile(filePath);
-    const options = {
-      access: "public",
-      addRandomSuffix: true,
-      contentType: "video/mp4",
-      multipart: true
-    };
-
-    if (useOidc) {
-      options.oidcToken = oidcToken;
-      options.storeId = storeId;
-    } else {
-      options.token = token;
-    }
-
     const result = await put(
       "reels/" + path.basename(filePath),
       bytes,
-      options
+      {
+        access: "public",
+        addRandomSuffix: true,
+        contentType: "video/mp4",
+        multipart: true,
+        token
+      }
     );
     process.stdout.write(JSON.stringify({ url: result.url }) + "\n");
   } catch (error) {
