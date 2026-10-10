@@ -7,5 +7,9 @@ dist/
 build/
 *.egg-info/
 .env
+.env.local
+.vercel.local.env
+.novak-local.json
+.vercel/
+node_modules/
 downloads/
-
