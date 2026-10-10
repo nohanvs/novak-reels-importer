@@ -132,16 +132,26 @@ if (!(Test-Command "python")) { $missingPackages += @{ id = "Python.Python.3.12"
 if (!(Test-Command "ffmpeg")) { $missingPackages += @{ id = "Gyan.FFmpeg.Shared"; name = "FFmpeg" } }
 
 if ($missingPackages.Count -gt 0 -and (Test-Command "winget")) {
+  $installedAny = $false
   foreach ($package in $missingPackages) {
     Write-Host ("Instalando " + $package.name + " por meio do winget...") -ForegroundColor Cyan
     & winget install --exact --id $package.id --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -eq 0) {
+      $installedAny = $true
+    } else {
       Write-Host ("Não consegui instalar " + $package.name + " automaticamente.") -ForegroundColor Yellow
     }
   }
-  Write-Host ""
-  Write-Host "Feche esta janela e abra INICIAR_LOCAL.bat novamente para o Windows atualizar o PATH." -ForegroundColor Green
-  exit 0
+  if ($installedAny) {
+    Write-Host ""
+    Write-Host "Feche esta janela e abra INICIAR_LOCAL.bat novamente para o Windows atualizar o PATH." -ForegroundColor Green
+    exit 0
+  }
+  Write-Host "A instalação automática falhou. Instale manualmente os itens que faltam:" -ForegroundColor Red
+  Write-Host "Python 3.12: https://www.python.org/downloads/windows/"
+  Write-Host "Node.js LTS: https://nodejs.org/en/download"
+  Write-Host "FFmpeg: https://www.gyan.dev/ffmpeg/builds/"
+  exit 1
 }
 
 if (!(Test-Command "node") -or !(Test-Command "npm")) {
