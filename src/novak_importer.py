@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import http.client
 import json
 import logging
 import os
 import re
 import shutil
 import socket
-import ssl
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,8 +100,12 @@ class ApiClient:
             raise ImporterError("Processed video must be between 1 byte and 95 MB")
         if video_path.suffix.lower() not in VIDEO_SUFFIXES:
             raise ImporterError("Processed file is not MP4 or MOV")
-        if not os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip():
-            raise ImporterError("BLOB_READ_WRITE_TOKEN is required to upload the processed video")
+
+        blob_token = os.environ.get("BLOB_READ_WRITE_TOKEN", "").strip()
+        oidc_token = os.environ.get("VERCEL_OIDC_TOKEN", "").strip()
+        blob_store_id = os.environ.get("BLOB_STORE_ID", "").strip()
+        if not blob_token and not (oidc_token and blob_store_id):
+            raise ImporterError("Vercel Blob credentials are required (OIDC or BLOB_READ_WRITE_TOKEN)")
 
         upload_script = Path(os.environ.get("GITHUB_WORKSPACE", str(Path.cwd()))).resolve() / "scripts" / "upload-blob.mjs"
         if not upload_script.exists():
@@ -116,19 +117,21 @@ class ApiClient:
                 text=True,
                 timeout=240,
                 check=False,
+                env=os.environ.copy(),
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise ImporterError(f"Blob upload failed: {type(error).__name__}") from error
         if uploaded.returncode != 0:
-            raise ImporterError("Processed video could not be uploaded to public storage")
+            detail = sanitize_error(uploaded.stderr or uploaded.stdout or "unknown Blob error")
+            raise ImporterError(f"Blob upload failed: {detail}")
 
         try:
             upload_result = json.loads(uploaded.stdout.strip())
         except (json.JSONDecodeError, AttributeError) as error:
             raise ImporterError("Blob uploader returned invalid JSON") from error
         video_url = upload_result.get("url") if isinstance(upload_result, dict) else None
-        if not isinstance(video_url, str) or not video_url.startswith("https://"):
-            raise ImporterError("Blob uploader did not return a public HTTPS URL")
+        if not isinstance(video_url, str) or not valid_public_blob_url(video_url):
+            raise ImporterError("Blob uploader did not return a valid public HTTPS URL")
 
         result = self._json_request(
             "PATCH",
@@ -156,7 +159,7 @@ class ApiClient:
         headers = {
             "Authorization": f"Bearer {self.config.importer_token}",
             "Accept": "application/json",
-            "User-Agent": "NovaK-Reels-Importer/0.2",
+            "User-Agent": "NovaK-Reels-Importer/0.3",
         }
         if self.config.sites_authorization:
             headers["OAI-Sites-Authorization"] = f"Bearer {self.config.sites_authorization}"
@@ -204,6 +207,7 @@ class VideoDownloader:
             "fragment_retries": 3,
             "quiet": True,
             "no_warnings": True,
+            "noprogress": True,
         }
         try:
             with YoutubeDL(options) as downloader:
@@ -225,20 +229,24 @@ class VideoEditor:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise ImporterError("ffmpeg is not installed")
+        font_file = _find_font_file()
+        font_option = f"fontfile='{_escape_filter_path(font_file)}':" if font_file else ""
         filter_graph = (
             "drawtext="
-            "text='twitch.tv/facada':" 
-            "x=(w-text_w)/2:" 
-            "y=h-text_h-48:" 
-            "fontsize=28:" 
-            "fontcolor=white:" 
-            "borderw=3:" 
-            "bordercolor=black"
+            + font_option
+            + "text='twitch.tv/facada':"
+            + "x=(w-text_w)/2:"
+            + "y=h-text_h-48:"
+            + "fontsize=28:"
+            + "fontcolor=white:"
+            + "borderw=3:"
+            + "bordercolor=black"
         )
         command = [
             ffmpeg, "-y", "-i", str(source),
             "-vf", filter_graph,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-movflags", "+faststart",
             str(destination),
         ]
@@ -247,7 +255,8 @@ class VideoEditor:
         except (OSError, subprocess.TimeoutExpired) as error:
             raise ImporterError(f"Video editing failed: {type(error).__name__}") from error
         if completed.returncode != 0:
-            raise ImporterError("Video editing failed")
+            detail = sanitize_error(completed.stderr or completed.stdout or "ffmpeg returned an error")
+            raise ImporterError(f"Video editing failed: {detail}")
         if not destination.exists() or destination.stat().st_size < 1 or destination.stat().st_size > MAX_VIDEO_BYTES:
             raise ImporterError("Edited video must be between 1 byte and 95 MB")
         return destination
@@ -280,7 +289,7 @@ class Worker:
                             raise ImporterError("API did not accept the video")
                     succeeded += 1
                     LOGGER.info("Job %s accepted with watermark and %s", job.id, HASHTAG)
-                except Exception as error:  # keep one bad item from blocking the remaining queue
+                except Exception as error:
                     failed += 1
                     safe_error = sanitize_error(str(error) or type(error).__name__)
                     LOGGER.error("Job %s failed: %s", job.id, safe_error)
@@ -325,6 +334,41 @@ def validate_twitch_clip_url(value: str) -> None:
         raise ImporterError("Twitch URL must point to a clip")
 
 
+def valid_public_blob_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value)
+        return (
+            parsed.scheme == "https"
+            and not parsed.username
+            and not parsed.password
+            and parsed.hostname is not None
+            and parsed.hostname.lower().endswith(".public.blob.vercel-storage.com")
+        )
+    except ValueError:
+        return False
+
+
+def _find_font_file() -> str | None:
+    candidates = []
+    if os.name == "nt":
+        candidates.extend([
+            os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "Arial.ttf"),
+            os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", "arial.ttf"),
+        ])
+    candidates.extend([
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    ])
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _escape_filter_path(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+
+
 def sanitize_error(value: str) -> str:
     compact = " ".join(value.replace("\x00", "").split())
     compact = re.sub(r"(?i)\bauthorization\s*[:=]?\s*bearer\s+[^\s,;]+", "Authorization=[redacted]", compact)
@@ -358,14 +402,15 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     try:
         config = Config.from_env()
-        worker = Worker(config, ApiClient(config), VideoDownloader(config.download_timeout_seconds), VideoEditor())
+        client = ApiClient(config)
+        worker = Worker(config, client, VideoDownloader(config.download_timeout_seconds))
         succeeded, failed = worker.run()
         LOGGER.info("Finished: %s accepted, %s failed", succeeded, failed)
-        return 1 if failed else 0
-    except ImporterError as error:
+        return 1 if failed and not succeeded else 0
+    except Exception as error:
         LOGGER.error("Importer configuration failed: %s", sanitize_error(str(error)))
-        return 2
+        return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
