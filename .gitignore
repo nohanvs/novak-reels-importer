@@ -13,3 +13,5 @@ build/
 .vercel/
 node_modules/
 downloads/
+.vercel
+.env*
