@@ -312,11 +312,11 @@ def validate_source_url(value: str) -> None:
     if TWITCH_HOST_RE.search(hostname):
         validate_twitch_clip_url(value)
         return
-    if KICK_HOST_RE.search(hostname):
-        validate_kick_url(value)
-        return
     if KICK_CLIPS_HOST_RE.search(hostname):
         validate_kick_clip_media_url(value)
+        return
+    if KICK_HOST_RE.search(hostname):
+        validate_kick_url(value)
         return
     raise ImporterError("Only HTTPS TikTok, Twitch clip, and Kick clip/VOD URLs are allowed")
 
