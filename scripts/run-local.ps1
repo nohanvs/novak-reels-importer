@@ -78,8 +78,33 @@ function Start-Cooldown {
   $config = Read-LocalConfig; $until = (Get-Date).AddSeconds($RateLimitCooldownSeconds); $config | Add-Member PublishCooldownUntil $until.ToString("o") -Force; Save-LocalConfig $config
   Write-Host ("A Meta limitou as requisições. Publicações pausadas até {0}." -f $until.ToString("HH:mm")) -ForegroundColor Yellow
 }
+function Ensure-PortableFfmpeg {
+  $localBin = Join-Path $Root "tools\ffmpeg\bin"
+  $localExe = Join-Path $localBin "ffmpeg.exe"
+  if (Test-Path $localExe) { $env:PATH = "$localBin;$env:PATH"; return }
+  if (Test-Command "ffmpeg") { return }
+
+  $tempRoot = Join-Path $env:TEMP ("luanz7-ffmpeg-" + [guid]::NewGuid().ToString("N"))
+  $zipPath = Join-Path $tempRoot "ffmpeg.zip"
+  $extractPath = Join-Path $tempRoot "extract"
+  try {
+    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+    Write-Host "Baixando FFmpeg automaticamente (uma única vez)..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zipPath -UseBasicParsing
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $extractPath -Force
+    $downloadedExe = Get-ChildItem -LiteralPath $extractPath -Filter "ffmpeg.exe" -File -Recurse | Select-Object -First 1
+    if (!$downloadedExe) { throw "O pacote baixado não possui ffmpeg.exe." }
+    New-Item -ItemType Directory -Path $localBin -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $downloadedExe.Directory.FullName "*") -Destination $localBin -Force
+    $env:PATH = "$localBin;$env:PATH"
+    Write-Host "FFmpeg pronto." -ForegroundColor Green
+  } finally {
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
 
 Write-Host "=== Luanz7 Reels - executor local para Windows ===" -ForegroundColor Cyan
+Ensure-PortableFfmpeg
 if (!(Test-Command "node") -or !(Test-Command "npm")) {
   throw "Node.js LTS não está disponível. Instale em https://nodejs.org/ e abra este arquivo novamente."
 }
@@ -89,7 +114,7 @@ if (!(Test-Command "python")) {
   Write-Host "Na primeira tela, marque 'Add Python to PATH'; depois conclua a instalação e abra INICIAR_LOCAL.bat novamente." -ForegroundColor Cyan
   throw "Falta instalar Python 3.11 ou superior."
 }
-if (!(Test-Command "ffmpeg")) { throw "Instale o FFmpeg e adicione-o ao PATH antes de iniciar." }
+if (!(Test-Command "ffmpeg")) { throw "Não consegui preparar o FFmpeg automaticamente. Confira sua internet e execute novamente." }
 if (!(Test-Command "vercel")) { & npm install --global vercel; if ($LASTEXITCODE -ne 0) { throw "Não consegui instalar a Vercel CLI." } }
 if (!(Test-Path (Join-Path $Root ".vercel\project.json"))) { & vercel link --project $ProjectName --scope $VercelScope; if ($LASTEXITCODE -ne 0) { throw "Não consegui vincular esta pasta ao Vercel." } }
 if (!(Test-Path (Join-Path $Root ".venv\Scripts\python.exe"))) { & python -m venv (Join-Path $Root ".venv") }

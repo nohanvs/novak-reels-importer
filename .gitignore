@@ -13,5 +13,6 @@ build/
 .vercel/
 node_modules/
 downloads/
+tools/ffmpeg/
 .vercel
 .env*
