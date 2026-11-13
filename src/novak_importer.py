@@ -12,16 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 MAX_VIDEO_BYTES = 95 * 1024 * 1024
 VIDEO_SUFFIXES = {".mp4": "video/mp4", ".mov": "video/quicktime"}
 TIKTOK_HOST_RE = re.compile(r"(^|\.)tiktok\.com$", re.IGNORECASE)
 TWITCH_HOST_RE = re.compile(r"(^|\.)twitch\.tv$", re.IGNORECASE)
+KICK_HOST_RE = re.compile(r"(^|\.)kick\.com$", re.IGNORECASE)
+KICK_CLIPS_HOST_RE = re.compile(r"^clips\.kick\.com$", re.IGNORECASE)
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-WATERMARK_TEXT = "twitch.tv/facada"
-HASHTAG = "#facadarp"
+WATERMARK_TEXT = "kick.com/luanz7"
+HASHTAG = "#luanz7"
 
 LOGGER = logging.getLogger("novak_importer")
 
@@ -234,7 +236,7 @@ class VideoEditor:
         filter_graph = (
             "drawtext="
             + font_option
-            + "text='twitch.tv/facada':"
+            + f"text='{WATERMARK_TEXT}':"
             + "x=(w-text_w)/2:"
             + "y=h-text_h-48:"
             + "fontsize=28:"
@@ -310,7 +312,13 @@ def validate_source_url(value: str) -> None:
     if TWITCH_HOST_RE.search(hostname):
         validate_twitch_clip_url(value)
         return
-    raise ImporterError("Only HTTPS TikTok and Twitch clip URLs are allowed")
+    if KICK_HOST_RE.search(hostname):
+        validate_kick_url(value)
+        return
+    if KICK_CLIPS_HOST_RE.search(hostname):
+        validate_kick_clip_media_url(value)
+        return
+    raise ImporterError("Only HTTPS TikTok, Twitch clip, and Kick clip/VOD URLs are allowed")
 
 
 def validate_tiktok_url(value: str) -> None:
@@ -332,6 +340,30 @@ def validate_twitch_clip_url(value: str) -> None:
     is_channel_clip_url = bool(re.search(r"(?:^|/)clip/[^/]+$", path, re.IGNORECASE))
     if not path or not (is_short_clip_url or is_channel_clip_url):
         raise ImporterError("Twitch URL must point to a clip")
+
+
+def validate_kick_url(value: str) -> None:
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").rstrip(".")
+    if parsed.scheme != "https" or not KICK_HOST_RE.search(hostname) or parsed.username or parsed.password:
+        raise ImporterError("Only HTTPS Kick URLs are allowed")
+    path_parts = [part for part in parsed.path.split("/") if part]
+    is_vod = len(path_parts) >= 3 and path_parts[1].lower() == "videos" and bool(path_parts[2])
+    is_clip = bool(parsed.query) and any(
+        key.lower() == "clip" and bool(value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+    )
+    if not (is_vod or is_clip):
+        raise ImporterError("Kick URL must point to a clip or VOD")
+
+
+def validate_kick_clip_media_url(value: str) -> None:
+    parsed = urlparse(value)
+    hostname = (parsed.hostname or "").rstrip(".")
+    if parsed.scheme != "https" or not KICK_CLIPS_HOST_RE.fullmatch(hostname) or parsed.username or parsed.password:
+        raise ImporterError("Only public Kick clip media URLs are allowed")
+    if not re.fullmatch(r"/clips/[a-z0-9]+/clip_[A-Za-z0-9]+/playlist\.m3u8", parsed.path):
+        raise ImporterError("Kick media URL must point to a clip playlist")
 
 
 def valid_public_blob_url(value: str) -> bool:

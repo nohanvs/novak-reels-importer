@@ -1,16 +1,16 @@
-# NovaK Reels
+# Luanz7 Reels
 
-Site mínimo para postar um link do TikTok ou de um clip da Twitch. O projeto usa Vercel Functions para a fila, Upstash Redis para armazenamento dos trabalhos, Vercel Blob para os vídeos processados e GitHub Actions para baixar, aplicar a marca d'água e publicar Reels no Instagram.
+Site mínimo para postar um link do TikTok, de um clip da Twitch ou de um clip/VOD da Kick. O projeto usa Vercel Functions para a fila, Upstash Redis para armazenamento dos trabalhos, Vercel Blob para os vídeos processados e GitHub Actions para baixar, aplicar a marca d'água e publicar Reels no Instagram.
 
 ## O que acontece quando você toca em Postar
 
 1. O site valida o link HTTPS e exige a senha de postagem e a confirmação de autorização.
 2. O link entra na fila persistente no Upstash Redis.
-3. O worker do GitHub Actions baixa o vídeo com `yt-dlp`, limita o arquivo a 95 MB e aplica a marca d'água `twitch.tv/facada` perto da parte inferior.
-4. O vídeo processado é enviado ao Vercel Blob público e recebe a hashtag `#facadarp`.
+3. O worker baixa o vídeo com `yt-dlp`, limita o arquivo a 95 MB e aplica a marca d'água `kick.com/luanz7` perto da parte inferior.
+4. O vídeo processado é enviado ao Vercel Blob público e recebe a hashtag `#luanz7`.
 5. O worker de publicação envia o Reel à API do Instagram e registra o resultado na fila.
 
-O GitHub Actions verifica a fila a cada 15 minutos e também pode ser iniciado manualmente em **Actions → Import and publish authorized videos → Run workflow**. O horário do cron depende da disponibilidade do GitHub Actions, então o envio pelo site coloca o vídeo na fila; não garante publicação instantânea.
+O executor local monitora os clips novos da Kick, processa a fila e publica com intervalo seguro. Deixe `INICIAR_LOCAL.bat` aberto para o monitor automático continuar funcionando.
 
 Use somente vídeos próprios, autorizados ou de domínio público. A pessoa que envia o link é responsável por ter direito de reutilizá-lo e publicá-lo. A marca d'água não comprova autorização. O token de publicação fica apenas nos segredos do GitHub, nunca no navegador.
 

@@ -34,7 +34,7 @@ export default async function handler(request, response) {
       }
       job.status = "queued_for_publish";
       job.videoUrl = body.videoUrl;
-      job.caption = typeof body.caption === "string" && body.caption.trim() ? body.caption.trim() : "#facadarp";
+      job.caption = typeof body.caption === "string" && body.caption.trim() ? body.caption.trim() : "#luanz7";
       job.processedAt = new Date().toISOString();
       await saveJob(job);
       await redis(["LPUSH", PUBLISH_QUEUE, id]);

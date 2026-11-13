@@ -2,293 +2,99 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
+$ConfigPath = Join-Path $Root ".luanz7-local.json"
 $VercelEnvPath = Join-Path $Root ".vercel.local.env"
-$LocalConfigPath = Join-Path $Root ".novak-local.json"
 $VercelScope = "nohanvsff-3505s-projects"
 $ProjectName = "novak-reels-importer"
 $ApiBaseUrl = "https://novak-reels-importer.vercel.app"
+$PollSeconds = 30
+$RateLimitCooldownSeconds = 1800
 
-function Test-Command([string]$Name) {
-  return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
-}
-
+function Test-Command([string]$Name) { return [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
 function Convert-SecureToPlainText([Security.SecureString]$Secret) {
   $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secret)
-  try {
-    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
-  } finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
-  }
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
 }
-
+function Read-LocalConfig {
+  if (!(Test-Path $ConfigPath)) { return [pscustomobject]@{} }
+  try { return Get-Content -Raw -LiteralPath $ConfigPath | ConvertFrom-Json } catch { return [pscustomobject]@{} }
+}
+function Save-LocalConfig($Config) { $Config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8 }
 function Read-DotEnv([string]$Path) {
   $values = @{}
   if (!(Test-Path $Path)) { return $values }
   foreach ($line in Get-Content -LiteralPath $Path) {
     if ($line -match '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') {
-      $key = $matches[1]
-      $value = $matches[2].Trim()
-      if ($value.Length -ge 2 -and (
-          ($value.StartsWith('"') -and $value.EndsWith('"')) -or
-          ($value.StartsWith("'") -and $value.EndsWith("'"))
-        )) {
-        $value = $value.Substring(1, $value.Length - 2)
-      }
-      $values[$key] = $value
+      $value = $matches[2].Trim(); if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[-1] -eq '"') -or ($value[0] -eq "'" -and $value[-1] -eq "'"))) { $value = $value.Substring(1, $value.Length - 2) }; $values[$matches[1]] = $value
     }
-  }
-  return $values
+  }; return $values
 }
-
 function Pull-VercelEnvironment {
-  $temporaryPath = "$VercelEnvPath.tmp"
-  if (Test-Path $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
-  Write-Host "Atualizando as variáveis protegidas do Vercel..." -ForegroundColor Cyan
-  & vercel env pull $temporaryPath --environment=production
-  if ($LASTEXITCODE -ne 0 -or !(Test-Path $temporaryPath)) {
-    if (Test-Path $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
-    return $false
-  }
-
+  $temporaryPath = "$VercelEnvPath.tmp"; Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+  Write-Host "Atualizando as variáveis do Vercel..." -ForegroundColor Cyan
+  & vercel env pull $temporaryPath --environment=production --scope $VercelScope
+  if ($LASTEXITCODE -ne 0 -or !(Test-Path $temporaryPath)) { return $false }
   Move-Item -LiteralPath $temporaryPath -Destination $VercelEnvPath -Force
-  $values = Read-DotEnv $VercelEnvPath
-  foreach ($key in $values.Keys) {
-    [Environment]::SetEnvironmentVariable([string]$key, [string]$values[$key], "Process")
-  }
-  $env:NOVAK_API_BASE_URL = $ApiBaseUrl
-  $env:META_GRAPH_API_VERSION = "v23.0"
-  $env:PYTHONUNBUFFERED = "1"
-  return $true
+  foreach ($entry in (Read-DotEnv $VercelEnvPath).GetEnumerator()) { [Environment]::SetEnvironmentVariable([string]$entry.Key, [string]$entry.Value, "Process") }
+  $env:NOVAK_API_BASE_URL = $ApiBaseUrl; $env:META_GRAPH_API_VERSION = "v23.0"; $env:PYTHONUNBUFFERED = "1"; return $true
 }
-
-function Save-LocalConfig($Config) {
-  $Config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $LocalConfigPath -Encoding UTF8
-}
-
-function Configure-InstagramCredentials {
-  $config = $null
-  if (Test-Path $LocalConfigPath) {
-    try { $config = Get-Content -Raw -LiteralPath $LocalConfigPath | ConvertFrom-Json } catch { $config = $null }
-  }
-  if (!$config -or !$config.InstagramUserId -or !$config.InstagramAccessTokenProtected) {
-    Write-Host ""
-    Write-Host "Precisamos configurar a conta profissional do Instagram." -ForegroundColor Yellow
-    Write-Host "O token será digitado de forma oculta e guardado criptografado para este usuário do Windows."
-    $userId = Read-Host "Cole o INSTAGRAM_USER_ID"
-    while ([string]::IsNullOrWhiteSpace($userId)) {
-      $userId = Read-Host "O ID é obrigatório. Cole o INSTAGRAM_USER_ID"
-    }
-    $secureToken = Read-Host "Cole o INSTAGRAM_ACCESS_TOKEN (não será exibido)" -AsSecureString
-    if ($secureToken.Length -lt 20) {
-      throw "O token do Instagram parece curto demais. Execute novamente e cole o token completo."
-    }
-    if (!$config) { $config = [pscustomobject]@{} }
-    $config | Add-Member -NotePropertyName InstagramUserId -NotePropertyValue $userId.Trim() -Force
-    $config | Add-Member -NotePropertyName InstagramAccessTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secureToken) -Force
-    Save-LocalConfig $config
-  }
-
-  $secureInstagramToken = ConvertTo-SecureString ([string]$config.InstagramAccessTokenProtected)
-  $env:INSTAGRAM_USER_ID = [string]$config.InstagramUserId
-  $env:INSTAGRAM_ACCESS_TOKEN = Convert-SecureToPlainText $secureInstagramToken
-}
-
 function Ensure-ImporterToken {
-  $config = $null
-  if (Test-Path $LocalConfigPath) {
-    try { $config = Get-Content -Raw -LiteralPath $LocalConfigPath | ConvertFrom-Json } catch { $config = $null }
-  }
-
-  # When Vercel returns a readable value, keep it locally encrypted for later cycles.
-  $current = ([string]$env:NOVAK_IMPORTER_TOKEN).Trim()
-  if ($current.Length -ge 32) {
-    $secure = ConvertTo-SecureString $current -AsPlainText -Force
-    if (!$config) { $config = [pscustomobject]@{} }
-    $config | Add-Member -NotePropertyName ImporterTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secure) -Force
-    Save-LocalConfig $config
-    $env:NOVAK_IMPORTER_TOKEN = $current
-    return
-  }
-
-  # Sensitive Vercel values may be masked on local pull; prefer the DPAPI-protected
-  # copy entered by the user, which must match the value saved in Vercel Production.
-  if ($config -and $config.ImporterTokenProtected) {
-    $secureSaved = ConvertTo-SecureString ([string]$config.ImporterTokenProtected)
-    $saved = Convert-SecureToPlainText $secureSaved
-    if ($saved.Trim().Length -ge 32) {
-      $env:NOVAK_IMPORTER_TOKEN = $saved.Trim()
-      return
+  $config = Read-LocalConfig; $current = ([string]$env:NOVAK_IMPORTER_TOKEN).Trim()
+  if ($current.Length -ge 32) { $secure = ConvertTo-SecureString $current -AsPlainText -Force; $config | Add-Member ImporterTokenProtected (ConvertFrom-SecureString $secure) -Force; Save-LocalConfig $config; return }
+  if ($config.ImporterTokenProtected) { $saved = Convert-SecureToPlainText (ConvertTo-SecureString ([string]$config.ImporterTokenProtected)); if ($saved.Trim().Length -ge 32) { $env:NOVAK_IMPORTER_TOKEN = $saved.Trim(); return } }
+  Write-Host "Cole o mesmo NOVAK_IMPORTER_TOKEN salvo no Vercel (a entrada fica oculta)." -ForegroundColor Yellow
+  $secure = Read-Host "NOVAK_IMPORTER_TOKEN" -AsSecureString; if ($secure.Length -lt 32) { throw "Token do executor inválido." }
+  $config | Add-Member ImporterTokenProtected (ConvertFrom-SecureString $secure) -Force; Save-LocalConfig $config; $env:NOVAK_IMPORTER_TOKEN = Convert-SecureToPlainText $secure
+}
+function Ensure-BlobToken {
+  Remove-Item Env:VERCEL_OIDC_TOKEN -ErrorAction SilentlyContinue; Remove-Item Env:BLOB_READ_WRITE_TOKEN -ErrorAction SilentlyContinue
+  $config = Read-LocalConfig
+  if ($config.BlobReadWriteTokenProtected) { $saved = Convert-SecureToPlainText (ConvertTo-SecureString ([string]$config.BlobReadWriteTokenProtected)); if ($saved.Trim().Length -ge 20) { $env:BLOB_READ_WRITE_TOKEN = $saved.Trim(); return } }
+  Write-Host "Cole o BLOB_READ_WRITE_TOKEN do Vercel Blob (a entrada fica oculta)." -ForegroundColor Yellow
+  $secure = Read-Host "BLOB_READ_WRITE_TOKEN" -AsSecureString; if ($secure.Length -lt 20) { throw "Token do Blob inválido." }
+  $config | Add-Member BlobReadWriteTokenProtected (ConvertFrom-SecureString $secure) -Force; Save-LocalConfig $config; $env:BLOB_READ_WRITE_TOKEN = Convert-SecureToPlainText $secure
+}
+function Get-InstagramAccounts {
+  $config = Read-LocalConfig; $accounts = @()
+  if ($config.InstagramAccounts) { $accounts = @($config.InstagramAccounts | Where-Object { $_.UserId -and $_.AccessTokenProtected }) }
+  if ($accounts.Count -eq 0) {
+    $count = Read-Host "Quantas contas do Instagram devem publicar? (1 ou 2)"; if ($count -notin @("1", "2")) { $count = "1" }
+    for ($index = 1; $index -le [int]$count; $index++) {
+      $userId = Read-Host "INSTAGRAM_USER_ID da conta $index"; if ([string]::IsNullOrWhiteSpace($userId)) { throw "O ID da conta $index é obrigatório." }
+      $token = Read-Host "INSTAGRAM_ACCESS_TOKEN da conta $index (oculto)" -AsSecureString; if ($token.Length -lt 20) { throw "O token da conta $index parece inválido." }
+      $accounts += [pscustomobject]@{ UserId = $userId.Trim(); AccessTokenProtected = ConvertFrom-SecureString $token }
     }
+    $config | Add-Member InstagramAccounts $accounts -Force; Save-LocalConfig $config
   }
-
-  Write-Host ""
-  Write-Host "A variável NOVAK_IMPORTER_TOKEN do Vercel veio vazia/curta. Use aqui exatamente o mesmo token salvo no Vercel -> Environment Variables -> Production." -ForegroundColor Yellow
-  Write-Host "A entrada fica oculta e será criptografada para este usuário do Windows."
-  $secureToken = Read-Host "Cole NOVAK_IMPORTER_TOKEN (mínimo 32 caracteres; não será exibido)" -AsSecureString
-  if ($secureToken.Length -lt 32) {
-    throw "NOVAK_IMPORTER_TOKEN precisa ter pelo menos 32 caracteres."
-  }
-
-  if (!$config) { $config = [pscustomobject]@{} }
-  $config | Add-Member -NotePropertyName ImporterTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secureToken) -Force
-  Save-LocalConfig $config
-  $env:NOVAK_IMPORTER_TOKEN = Convert-SecureToPlainText $secureToken
+  $plain = @(); foreach ($account in $accounts) { $plain += @{ userId = [string]$account.UserId; accessToken = Convert-SecureToPlainText (ConvertTo-SecureString ([string]$account.AccessTokenProtected)) } }
+  $env:INSTAGRAM_ACCOUNTS_JSON = $plain | ConvertTo-Json -Compress; $env:INSTAGRAM_USER_ID = $plain[0].userId; $env:INSTAGRAM_ACCESS_TOKEN = $plain[0].accessToken
+}
+function In-Cooldown {
+  $config = Read-LocalConfig; if (!$config.PublishCooldownUntil) { return $false }
+  try { return ([DateTime]::Parse([string]$config.PublishCooldownUntil) -gt (Get-Date)) } catch { return $false }
+}
+function Start-Cooldown {
+  $config = Read-LocalConfig; $until = (Get-Date).AddSeconds($RateLimitCooldownSeconds); $config | Add-Member PublishCooldownUntil $until.ToString("o") -Force; Save-LocalConfig $config
+  Write-Host ("A Meta limitou as requisições. Publicações pausadas até {0}." -f $until.ToString("HH:mm")) -ForegroundColor Yellow
 }
 
-function Ensure-BlobCredentials {
-  if ($env:BLOB_READ_WRITE_TOKEN -or ($env:VERCEL_OIDC_TOKEN -and $env:BLOB_STORE_ID)) {
-    return
-  }
-
-  $config = $null
-  if (Test-Path $LocalConfigPath) {
-    try { $config = Get-Content -Raw -LiteralPath $LocalConfigPath | ConvertFrom-Json } catch { $config = $null }
-  }
-  if ($config -and $config.BlobReadWriteTokenProtected) {
-    $secureBlobToken = ConvertTo-SecureString ([string]$config.BlobReadWriteTokenProtected)
-    $env:BLOB_READ_WRITE_TOKEN = Convert-SecureToPlainText $secureBlobToken
-    return
-  }
-
-  Write-Host ""
-  Write-Host "Não encontrei credenciais OIDC ou token do Blob no ambiente do Vercel." -ForegroundColor Yellow
-  Write-Host "No painel Vercel -> Storage -> Blob -> seu store, copie um Read-Write Token."
-  $secureBlobToken = Read-Host "Cole BLOB_READ_WRITE_TOKEN (entrada oculta)" -AsSecureString
-  if ($secureBlobToken.Length -lt 20) {
-    throw "O token do Blob parece curto demais. Confirme no painel do Vercel."
-  }
-  if (!$config) { $config = [pscustomobject]@{} }
-  $config | Add-Member -NotePropertyName BlobReadWriteTokenProtected -NotePropertyValue (ConvertFrom-SecureString $secureBlobToken) -Force
-  Save-LocalConfig $config
-  $env:BLOB_READ_WRITE_TOKEN = Convert-SecureToPlainText $secureBlobToken
-}
-
-Write-Host "=== NovaK Reels - executor local para Windows ===" -ForegroundColor Cyan
-Write-Host "Esse programa fica consultando a fila e processa os vídeos neste PC."
-Write-Host ""
-
-# Try to install missing prerequisites automatically when Windows Package Manager is available.
-$missingPackages = @()
-if (!(Test-Command "node") -or !(Test-Command "npm")) { $missingPackages += @{ id = "OpenJS.NodeJS.LTS"; name = "Node.js LTS" } }
-if (!(Test-Command "python")) { $missingPackages += @{ id = "Python.Python.3.12"; name = "Python 3.12" } }
-if (!(Test-Command "ffmpeg")) { $missingPackages += @{ id = "Gyan.FFmpeg.Shared"; name = "FFmpeg" } }
-
-if ($missingPackages.Count -gt 0 -and (Test-Command "winget")) {
-  $installedAny = $false
-  foreach ($package in $missingPackages) {
-    Write-Host ("Instalando " + $package.name + " por meio do winget...") -ForegroundColor Cyan
-    & winget install --exact --id $package.id --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -eq 0) {
-      $installedAny = $true
-    } else {
-      Write-Host ("Não consegui instalar " + $package.name + " automaticamente.") -ForegroundColor Yellow
-    }
-  }
-  if ($installedAny) {
-    Write-Host ""
-    Write-Host "Feche esta janela e abra INICIAR_LOCAL.bat novamente para o Windows atualizar o PATH." -ForegroundColor Green
-    exit 0
-  }
-  Write-Host "A instalação automática falhou. Instale manualmente os itens que faltam:" -ForegroundColor Red
-  Write-Host "Python 3.12: https://www.python.org/downloads/windows/"
-  Write-Host "Node.js LTS: https://nodejs.org/en/download"
-  Write-Host "FFmpeg: https://www.gyan.dev/ffmpeg/builds/"
-  exit 1
-}
-
-if (!(Test-Command "node") -or !(Test-Command "npm")) {
-  Write-Host "Instale Node.js LTS e abra esta janela novamente:" -ForegroundColor Red
-  Write-Host "https://nodejs.org/en/download"
-  exit 1
-}
-if (!(Test-Command "python")) {
-  Write-Host "Instale Python 3.12 (marcando 'Add Python to PATH') e abra esta janela novamente:" -ForegroundColor Red
-  Write-Host "https://www.python.org/downloads/windows/"
-  exit 1
-}
-if (!(Test-Command "ffmpeg")) {
-  Write-Host "Instale o FFmpeg para Windows e adicione a pasta bin ao PATH:" -ForegroundColor Red
-  Write-Host "https://www.gyan.dev/ffmpeg/builds/"
-  exit 1
-}
-
-if (!(Test-Command "vercel")) {
-  Write-Host "Instalando Vercel CLI..."
-  & npm install --global vercel
-  if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar Vercel CLI." }
-  $npmGlobal = Join-Path $env:APPDATA "npm"
-  if ($env:PATH -notlike "*$npmGlobal*") { $env:PATH = "$env:PATH;$npmGlobal" }
-  if (!(Test-Command "vercel")) {
-    throw "Vercel CLI foi instalado, mas não apareceu no PATH. Feche esta janela e abra INICIAR_LOCAL.bat novamente."
-  }
-}
-
-if (!(Test-Path (Join-Path $Root ".vercel\project.json"))) {
-  Write-Host "Conectando esta pasta ao projeto Vercel. Se pedir login, entre na sua conta e selecione o projeto $ProjectName." -ForegroundColor Cyan
-  & vercel link --project $ProjectName --scope $VercelScope
-  if ($LASTEXITCODE -ne 0 -or !(Test-Path (Join-Path $Root ".vercel\project.json"))) {
-    throw "Não consegui conectar ao projeto Vercel. Execute novamente e conclua o login/vínculo quando solicitado."
-  }
-}
-
-if (!(Test-Path (Join-Path $Root ".venv\Scripts\python.exe"))) {
-  Write-Host "Criando ambiente Python local..."
-  & python -m venv (Join-Path $Root ".venv")
-  if ($LASTEXITCODE -ne 0) { throw "Não consegui criar o ambiente Python. Instale Python 3.12 e tente novamente." }
-}
+Write-Host "=== Luanz7 Reels - executor local para Windows ===" -ForegroundColor Cyan
+if (!(Test-Command "node") -or !(Test-Command "npm") -or !(Test-Command "python")) { throw "Instale Node.js LTS e Python 3.11+ e abra este arquivo novamente." }
+if (!(Test-Command "ffmpeg")) { throw "Instale o FFmpeg e adicione-o ao PATH antes de iniciar." }
+if (!(Test-Command "vercel")) { & npm install --global vercel; if ($LASTEXITCODE -ne 0) { throw "Não consegui instalar a Vercel CLI." } }
+if (!(Test-Path (Join-Path $Root ".vercel\project.json"))) { & vercel link --project $ProjectName --scope $VercelScope; if ($LASTEXITCODE -ne 0) { throw "Não consegui vincular esta pasta ao Vercel." } }
+if (!(Test-Path (Join-Path $Root ".venv\Scripts\python.exe"))) { & python -m venv (Join-Path $Root ".venv") }
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
+& $Python -m pip install --disable-pip-version-check -e .; if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o importador." }
+& npm install --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar as dependências Node." }
+if (!(Pull-VercelEnvironment)) { throw "Não consegui baixar as variáveis do Vercel." }; Ensure-ImporterToken; Ensure-BlobToken; Get-InstagramAccounts
 
-Write-Host "Instalando dependências (isso pode levar alguns minutos)..."
-& $Python -m pip install --disable-pip-version-check --upgrade pip
-if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar pip." }
-& $Python -m pip install --disable-pip-version-check -e .
-if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o importador Python." }
-& npm install --no-audit --no-fund
-if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar dependências Node." }
-
-if (!(Pull-VercelEnvironment)) {
-  throw "Não consegui baixar as variáveis de produção do Vercel. Verifique o login e o vínculo do projeto e execute novamente."
-}
-Ensure-ImporterToken
-Configure-InstagramCredentials
-Ensure-BlobCredentials
-
-if (!$env:NOVAK_IMPORTER_TOKEN -or $env:NOVAK_IMPORTER_TOKEN.Trim().Length -lt 32 -or !$env:UPSTASH_REDIS_REST_URL -or !$env:UPSTASH_REDIS_REST_TOKEN) {
-  throw "Faltam NOVAK_IMPORTER_TOKEN ou credenciais do Upstash na configuração Production do Vercel."
-}
-if (!$env:BLOB_READ_WRITE_TOKEN -and !($env:VERCEL_OIDC_TOKEN -and $env:BLOB_STORE_ID)) {
-  throw "Falta autenticação do Vercel Blob."
-}
-
-$lastRefresh = Get-Date
-Write-Host ""
-Write-Host "Executor ativo. Deixe esta janela aberta. Para parar, pressione Ctrl+C." -ForegroundColor Green
-Write-Host "A fila será verificada a cada 60 segundos. Não cole senhas ou tokens no chat."
-Write-Host ""
-
+Write-Host "Executor ativo. Clips novos da Kick serão adicionados automaticamente; não feche esta janela." -ForegroundColor Green
 while ($true) {
-  if (((Get-Date) - $lastRefresh).TotalMinutes -ge 30) {
-    if (Pull-VercelEnvironment) {
-      try { Ensure-ImporterToken } catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
-      try { Ensure-BlobCredentials } catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
-      $lastRefresh = Get-Date
-      Write-Host "Credenciais Vercel atualizadas."
-    } else {
-      Write-Host "Aviso: não consegui atualizar as credenciais Vercel; vou tentar novamente no próximo ciclo." -ForegroundColor Yellow
-    }
-    Configure-InstagramCredentials
-  }
-
-  Write-Host ("[{0}] Verificando fila de importação..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan
-  & $Python -m novak_importer
-  $importExit = $LASTEXITCODE
-
-  Write-Host ("[{0}] Verificando fila de publicação..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan
-  & $Python -m novak_publisher
-  $publishExit = $LASTEXITCODE
-
-  if ($importExit -ne 0 -or $publishExit -ne 0) {
-    Write-Host "Um ciclo terminou com erro. Confira as mensagens acima; tentarei novamente em 60 segundos." -ForegroundColor Yellow
-  }
-  Start-Sleep -Seconds 60
+  Write-Host ("[{0}] Verificando clips novos da Kick..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan; & node scripts/scan-kick.mjs
+  Write-Host ("[{0}] Verificando fila de importação..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan; & $Python -m novak_importer
+  if (In-Cooldown) { Write-Host "Publicação em pausa por limite da Meta." -ForegroundColor Yellow }
+  else { Write-Host ("[{0}] Verificando fila de publicação..." -f (Get-Date -Format "HH:mm:ss")); & $Python -m novak_publisher; if ($LASTEXITCODE -eq 4) { Start-Cooldown } }
+  Start-Sleep -Seconds $PollSeconds
 }

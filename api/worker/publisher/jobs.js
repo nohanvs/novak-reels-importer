@@ -53,7 +53,12 @@ export default async function handler(request, response) {
     job.publishClaimedAt = new Date().toISOString();
     await saveJob(job);
     return response.status(200).json({
-      jobs: [{ id: job.id, videoUrl: job.videoUrl, caption: job.caption || "#facadarp" }]
+      jobs: [{
+        id: job.id,
+        videoUrl: job.videoUrl,
+        caption: job.caption || "#luanz7",
+        publishedAccounts: Array.isArray(job.publishedAccounts) ? job.publishedAccounts : []
+      }]
     });
   } catch {
     return response.status(503).json({ error: "A fila de publicação está indisponível." });

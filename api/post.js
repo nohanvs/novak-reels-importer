@@ -29,7 +29,7 @@ export default async function handler(request, response) {
 
   const sourceUrl = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
   if (!validSourceUrl(sourceUrl)) {
-    return response.status(400).json({ error: "Cole um link HTTPS válido de um vídeo do TikTok ou de um clip da Twitch." });
+    return response.status(400).json({ error: "Cole um link HTTPS válido de um vídeo do TikTok, clip da Twitch ou clip/VOD da Kick." });
   }
 
   try {
@@ -38,7 +38,7 @@ export default async function handler(request, response) {
       id,
       sourceUrl,
       status: "queued",
-      caption: "#facadarp",
+      caption: "#luanz7",
       createdAt: new Date().toISOString(),
       rightsConfirmed: true
     };

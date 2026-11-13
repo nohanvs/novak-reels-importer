@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from novak_importer import Config, ImporterError, Job, Worker, sanitize_error, validate_source_url, validate_tiktok_url, validate_twitch_clip_url
+from novak_importer import Config, ImporterError, Job, Worker, sanitize_error, validate_kick_clip_media_url, validate_kick_url, validate_source_url, validate_tiktok_url, validate_twitch_clip_url
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -26,6 +26,19 @@ class UrlValidationTests(unittest.TestCase):
             validate_twitch_clip_url(value)
             validate_source_url(value)
 
+    def test_accepts_kick_clip_and_vod_urls(self) -> None:
+        for value in (
+            "https://kick.com/luanz7?clip=clip_01HABCDEFG",
+            "https://kick.com/luanz7/videos/01234567-89ab-cdef-0123-456789abcdef",
+        ):
+            validate_kick_url(value)
+            validate_source_url(value)
+
+    def test_accepts_kick_clip_media_playlist(self) -> None:
+        value = "https://clips.kick.com/clips/18/clip_01M7B38MVH3X2T065H2ZN82YZR/playlist.m3u8"
+        validate_kick_clip_media_url(value)
+        validate_source_url(value)
+
     def test_rejects_lookalike_hosts_and_credentials(self) -> None:
         for value in (
             "https://tiktok.com.evil.example/@x/video/1",
@@ -34,6 +47,8 @@ class UrlValidationTests(unittest.TestCase):
             "https://www.tiktok.com/",
             "https://www.twitch.tv.evil.example/x/clip/ABC",
             "https://www.twitch.tv/channel/not-a-clip",
+            "https://kick.com/luanz7",
+            "https://kick.com.evil.example/luanz7?clip=abc",
         ):
             with self.subTest(value=value), self.assertRaises(ImporterError):
                 validate_source_url(value)
