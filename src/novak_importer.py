@@ -243,11 +243,13 @@ class VideoEditor:
             + "x=(w-text_w)/2:y=h-text_h-48:fontsize=28:fontcolor=white:borderw=3:bordercolor=black"
         )
         title = _overlay_headline(headline)
+        captions = LocalCaptioner().create_ass(source, destination.parent)
         profiles = (("3M", "3.5M", "1080"), ("2M", "2.5M", "720"))
         last_detail = "ffmpeg returned an error"
         for bitrate, maxrate, height in profiles:
             destination.unlink(missing_ok=True)
-            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,{title},{watermark}"
+            subtitle_filter = ",ass=filename='captions.ass'" if captions else ""
+            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease{subtitle_filter},{title},{watermark}"
             command = [
                 ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
                 "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
@@ -264,6 +266,36 @@ class VideoEditor:
             if destination.exists() and 0 < destination.stat().st_size <= MAX_VIDEO_BYTES:
                 return destination
         raise ImporterError(f"Video editing failed: {last_detail}" if last_detail != "ffmpeg returned an error" else "Edited video could not be compressed below 95 MB")
+
+
+class LocalCaptioner:
+    """Creates Portuguese subtitles locally. Caption failures must never stop a Reel."""
+
+    def create_ass(self, source: Path, workdir: Path) -> bool:
+        if os.environ.get("NOVAK_LOCAL_CAPTIONS", "1").strip().lower() in {"0", "false", "no"}:
+            return False
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            LOGGER.warning("Legendas locais indisponíveis: o motor gratuito ainda não foi instalado")
+            return False
+        try:
+            cache_root = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "Luanz7Reels" / "whisper"
+            cache_root.mkdir(parents=True, exist_ok=True)
+            model = WhisperModel("base", device="cpu", compute_type="int8", download_root=str(cache_root))
+            segments, _info = model.transcribe(str(source), language="pt", beam_size=3, vad_filter=True)
+            entries = []
+            for segment in segments:
+                text = _caption_text(segment.text)
+                if text:
+                    entries.append((float(segment.start), float(segment.end), text))
+            if not entries:
+                return False
+            _write_ass_captions(workdir / "captions.ass", entries)
+            return True
+        except Exception as error:
+            LOGGER.warning("Não foi possível gerar legendas locais; o vídeo continuará sem elas: %s", sanitize_error(str(error)))
+            return False
 
 
 class Worker:
@@ -409,9 +441,62 @@ def _overlay_headline(value: str) -> str:
         clean = "LUANZ7 AO VIVO"
     clean = clean[:62].replace("'", "\\'").replace(":", "\\:")
     return (
-        "drawbox=x=0:y=0:w=iw:h=150:color=black@0.55:t=fill:enable='between(t,0,2)',"
-        f"drawtext=text='{clean}':x=(w-text_w)/2:y=45:fontsize=42:fontcolor=white:borderw=2:bordercolor=black:enable='between(t,0,2)'"
+        "drawbox=x=0:y=0:w=iw:h=166:color=black@0.62:t=fill:enable='between(t,0,2.4)',"
+        "drawbox=x=0:y=0:w=12:h=166:color=0x74ff00:t=fill:enable='between(t,0,2.4)',"
+        f"drawtext=text='{clean}':x=(w-text_w)/2:y=38:fontsize=42:fontcolor=white:borderw=2:bordercolor=black:enable='between(t,0,2.4)',"
+        "drawtext=text='#LUANZ7':x=(w-text_w)/2:y=105:fontsize=24:fontcolor=0x74ff00:borderw=1:bordercolor=black:enable='between(t,0,2.4)'"
     )
+
+
+def _caption_text(value: object) -> str:
+    text = " ".join(str(value or "").split()).upper()
+    text = re.sub(r"[^A-ZÀ-Ý0-9 !?.,'’-]", "", text)
+    if len(text) < 2:
+        return ""
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= 27 or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    # Two concise lines are much easier to read in a fast Reel.
+    return r"\N".join(lines[:2])[:70]
+
+
+def _ass_time(seconds: float) -> str:
+    centiseconds = max(0, round(seconds * 100))
+    hours, remainder = divmod(centiseconds, 360000)
+    minutes, remainder = divmod(remainder, 6000)
+    whole_seconds, hundredths = divmod(remainder, 100)
+    return f"{hours}:{minutes:02d}:{whole_seconds:02d}.{hundredths:02d}"
+
+
+def _write_ass_captions(path: Path, entries: list[tuple[float, float, str]]) -> None:
+    header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Impacto,Arial,54,&H00FFFFFF,&H0000FFFF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,4,1,2,70,70,180,1
+
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+"""
+    lines = [header]
+    for start, end, text in entries:
+        # ASS control characters could alter rendering; keep only our escaped line breaks.
+        safe = text.replace("{", "(").replace("}", ")")
+        lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(max(end, start + 0.2))},Impacto,,0,0,0,,{safe}\n")
+    path.write_text("".join(lines), encoding="utf-8-sig")
 
 
 def sanitize_error(value: str) -> str:

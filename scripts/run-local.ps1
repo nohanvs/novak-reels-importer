@@ -103,6 +103,17 @@ function Ensure-PortableFfmpeg {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
+function Ensure-FreeCaptionEngine([string]$PythonPath) {
+  & $PythonPath -c "import faster_whisper" 2>$null
+  if ($LASTEXITCODE -eq 0) { return }
+  Write-Host "Preparando legendas automáticas gratuitas (primeira vez pode demorar)..." -ForegroundColor Cyan
+  & $PythonPath -m pip install --disable-pip-version-check --prefer-binary faster-whisper
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "Não consegui instalar as legendas agora. O executor seguirá funcionando e tentará novamente na próxima abertura." -ForegroundColor Yellow
+  } else {
+    Write-Host "Legendas gratuitas prontas. O modelo de idioma será baixado automaticamente no primeiro vídeo." -ForegroundColor Green
+  }
+}
 
 Write-Host "=== Luanz7 Reels - executor local para Windows ===" -ForegroundColor Cyan
 Ensure-PortableFfmpeg
@@ -121,6 +132,7 @@ if (!(Test-Path (Join-Path $Root ".vercel\project.json"))) { & vercel link --pro
 if (!(Test-Path (Join-Path $Root ".venv\Scripts\python.exe"))) { & python -m venv (Join-Path $Root ".venv") }
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 & $Python -m pip install --disable-pip-version-check -e .; if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o importador." }
+Ensure-FreeCaptionEngine $Python
 & npm install --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar as dependências Node." }
 if (!(Pull-VercelEnvironment)) { throw "Não consegui baixar as variáveis do Vercel." }; Ensure-ImporterToken; Ensure-BlobToken; Get-InstagramAccounts
 

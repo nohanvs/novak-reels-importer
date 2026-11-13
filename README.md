@@ -6,11 +6,11 @@ Site mínimo para postar um link do TikTok, de um clip da Twitch ou de um clip/V
 
 1. O site valida o link HTTPS e exige a senha de postagem e a confirmação de autorização.
 2. O link entra na fila persistente no Upstash Redis.
-3. O worker baixa o vídeo com `yt-dlp`, limita o arquivo a 95 MB e aplica a marca d'água `kick.com/luanz7` perto da parte inferior.
+3. O worker baixa o vídeo com `yt-dlp`, comprime para até 95 MB, nivela o áudio, aplica a marca d'água `kick.com/luanz7`, uma abertura com título e legendas em português geradas localmente.
 4. O vídeo processado é enviado ao Vercel Blob público e recebe a hashtag `#luanz7`.
 5. O worker de publicação envia o Reel à API do Instagram e registra o resultado na fila.
 
-O executor local monitora os clips novos da Kick, processa a fila e publica com intervalo seguro. Deixe `INICIAR_LOCAL.bat` aberto para o monitor automático continuar funcionando.
+O executor local monitora os clips novos da Kick, processa a fila e publica com intervalo seguro. Deixe `INICIAR_LOCAL.bat` aberto para o monitor automático continuar funcionando. Na primeira abertura ele instala automaticamente o FFmpeg e o motor livre de legendas; o modelo de idioma é baixado uma vez no primeiro vídeo. Se essa etapa estiver sem internet, o vídeo continua sendo processado sem legenda em vez de falhar.
 
 Use somente vídeos próprios, autorizados ou de domínio público. A pessoa que envia o link é responsável por ter direito de reutilizá-lo e publicá-lo. A marca d'água não comprova autorização. O token de publicação fica apenas nos segredos do GitHub, nunca no navegador.
 

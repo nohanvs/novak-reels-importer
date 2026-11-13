@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from novak_importer import Config, ImporterError, Job, Worker, sanitize_error, validate_kick_clip_media_url, validate_kick_url, validate_source_url, validate_tiktok_url, validate_twitch_clip_url
+from novak_importer import Config, ImporterError, Job, Worker, _ass_time, _caption_text, sanitize_error, validate_kick_clip_media_url, validate_kick_url, validate_source_url, validate_tiktok_url, validate_twitch_clip_url
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -131,6 +131,17 @@ class SanitizationTests(unittest.TestCase):
         value = sanitize_error("Authorization Bearer secret-value " + ("a" * 500))
         self.assertNotIn("secret-value", value)
         self.assertLessEqual(len(value), 300)
+
+
+class CaptionTests(unittest.TestCase):
+    def test_caption_text_is_short_uppercase_and_wrapped(self) -> None:
+        caption = _caption_text("isso é uma fala bem longa para aparecer claramente no vídeo inteiro")
+        self.assertEqual(caption, caption.upper())
+        self.assertIn(r"\N", caption)
+        self.assertLessEqual(len(caption), 70)
+
+    def test_ass_time_uses_ass_timestamp_format(self) -> None:
+        self.assertEqual(_ass_time(65.23), "0:01:05.23")
 
 
 if __name__ == "__main__":
