@@ -104,7 +104,9 @@ function Ensure-PortableFfmpeg {
   }
 }
 function Ensure-FreeCaptionEngine([string]$PythonPath) {
-  & $PythonPath -c "import faster_whisper" 2>$null
+  # find_spec does not import the package, so a partially installed optional
+  # caption engine cannot print a traceback or interrupt PowerShell.
+  & $PythonPath -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('faster_whisper') else 1)" 2>$null
   if ($LASTEXITCODE -eq 0) { return }
   Write-Host "Preparando legendas automáticas gratuitas (primeira vez pode demorar)..." -ForegroundColor Cyan
   & $PythonPath -m pip install --disable-pip-version-check --prefer-binary faster-whisper
