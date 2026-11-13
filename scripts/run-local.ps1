@@ -80,7 +80,15 @@ function Start-Cooldown {
 }
 
 Write-Host "=== Luanz7 Reels - executor local para Windows ===" -ForegroundColor Cyan
-if (!(Test-Command "node") -or !(Test-Command "npm") -or !(Test-Command "python")) { throw "Instale Node.js LTS e Python 3.11+ e abra este arquivo novamente." }
+if (!(Test-Command "node") -or !(Test-Command "npm")) {
+  throw "Node.js LTS não está disponível. Instale em https://nodejs.org/ e abra este arquivo novamente."
+}
+if (!(Test-Command "python")) {
+  Write-Host "Python não está instalado neste Windows." -ForegroundColor Yellow
+  Write-Host "Baixe o instalador 64-bit em https://www.python.org/downloads/windows/" -ForegroundColor Cyan
+  Write-Host "Na primeira tela, marque 'Add Python to PATH'; depois conclua a instalação e abra INICIAR_LOCAL.bat novamente." -ForegroundColor Cyan
+  throw "Falta instalar Python 3.11 ou superior."
+}
 if (!(Test-Command "ffmpeg")) { throw "Instale o FFmpeg e adicione-o ao PATH antes de iniciar." }
 if (!(Test-Command "vercel")) { & npm install --global vercel; if ($LASTEXITCODE -ne 0) { throw "Não consegui instalar a Vercel CLI." } }
 if (!(Test-Path (Join-Path $Root ".vercel\project.json"))) { & vercel link --project $ProjectName --scope $VercelScope; if ($LASTEXITCODE -ne 0) { throw "Não consegui vincular esta pasta ao Vercel." } }
