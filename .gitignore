@@ -10,6 +10,7 @@ build/
 .env.local
 .vercel.local.env
 .novak-local.json
+.luanz7-local.json
 .vercel/
 node_modules/
 downloads/
