@@ -8,6 +8,7 @@ const INITIALIZED_KEY = "luanz7:kick:clips:initialized";
 function validClip(clip) {
   return clip && typeof clip.id === "string" && /^clip_[A-Za-z0-9]+$/.test(clip.id)
     && typeof clip.clip_url === "string"
+    && Number.isFinite(Number(clip.duration)) && Number(clip.duration) >= 10 && Number(clip.duration) <= 180
     && /^https:\/\/clips\.kick\.com\/clips\/[a-z0-9]+\/clip_[A-Za-z0-9]+\/playlist\.m3u8$/.test(clip.clip_url);
 }
 
@@ -40,7 +41,8 @@ export default async function handler(request, response) {
       const job = {
         id: randomUUID(), sourceUrl: clip.clip_url, status: "queued", caption: "#luanz7",
         createdAt: new Date().toISOString(), rightsConfirmed: true, source: "kick-auto",
-        kickClipId: clip.id, kickClipTitle: String(clip.title || "").slice(0, 160), kickClipCreatedAt: clip.created_at || null
+        kickClipId: clip.id, kickClipTitle: String(clip.title || "").slice(0, 160), kickClipCreatedAt: clip.created_at || null,
+        kickClipDurationSeconds: Number(clip.duration)
       };
       await saveJob(job);
       await redis(["LPUSH", IMPORT_QUEUE, job.id]);

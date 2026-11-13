@@ -16,6 +16,7 @@ from urllib.parse import parse_qsl, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 MAX_VIDEO_BYTES = 95 * 1024 * 1024
+MAX_SOURCE_BYTES = 512 * 1024 * 1024
 VIDEO_SUFFIXES = {".mp4": "video/mp4", ".mov": "video/quicktime"}
 TIKTOK_HOST_RE = re.compile(r"(^|\.)tiktok\.com$", re.IGNORECASE)
 TWITCH_HOST_RE = re.compile(r"(^|\.)twitch\.tv$", re.IGNORECASE)
@@ -198,12 +199,12 @@ class VideoDownloader:
             raise ImporterError("yt-dlp is not installed") from error
 
         options = {
-            "format": "best[ext=mp4]/best",
+            "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
             "outtmpl": str(destination / "%(id)s.%(ext)s"),
             "noplaylist": True,
             "playlistend": 1,
             "restrictfilenames": True,
-            "max_filesize": MAX_VIDEO_BYTES,
+            "max_filesize": MAX_SOURCE_BYTES,
             "socket_timeout": min(self.timeout_seconds, 60),
             "retries": 3,
             "fragment_retries": 3,
@@ -221,8 +222,8 @@ class VideoDownloader:
         if len(candidates) != 1:
             raise ImporterError("Download did not produce exactly one supported video")
         video_path = candidates[0]
-        if video_path.stat().st_size < 1 or video_path.stat().st_size > MAX_VIDEO_BYTES:
-            raise ImporterError("Downloaded video must be between 1 byte and 95 MB")
+        if video_path.stat().st_size < 1 or video_path.stat().st_size > MAX_SOURCE_BYTES:
+            raise ImporterError("Downloaded video must be between 1 byte and 512 MB")
         return video_path
 
 
@@ -233,35 +234,31 @@ class VideoEditor:
             raise ImporterError("ffmpeg is not installed")
         font_file = _find_font_file()
         font_option = f"fontfile='{_escape_filter_path(font_file)}':" if font_file else ""
-        filter_graph = (
-            "drawtext="
-            + font_option
-            + f"text='{WATERMARK_TEXT}':"
-            + "x=(w-text_w)/2:"
-            + "y=h-text_h-48:"
-            + "fontsize=28:"
-            + "fontcolor=white:"
-            + "borderw=3:"
-            + "bordercolor=black"
+        watermark = (
+            "drawtext=" + font_option + f"text='{WATERMARK_TEXT}':"
+            + "x=(w-text_w)/2:y=h-text_h-48:fontsize=28:fontcolor=white:borderw=3:bordercolor=black"
         )
-        command = [
-            ffmpeg, "-y", "-i", str(source),
-            "-vf", filter_graph,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-movflags", "+faststart",
-            str(destination),
-        ]
-        try:
-            completed = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
-        except (OSError, subprocess.TimeoutExpired) as error:
-            raise ImporterError(f"Video editing failed: {type(error).__name__}") from error
-        if completed.returncode != 0:
-            detail = sanitize_error(completed.stderr or completed.stdout or "ffmpeg returned an error")
-            raise ImporterError(f"Video editing failed: {detail}")
-        if not destination.exists() or destination.stat().st_size < 1 or destination.stat().st_size > MAX_VIDEO_BYTES:
-            raise ImporterError("Edited video must be between 1 byte and 95 MB")
-        return destination
+        profiles = (("3M", "3.5M", "1080"), ("2M", "2.5M", "720"))
+        last_detail = "ffmpeg returned an error"
+        for bitrate, maxrate, height in profiles:
+            destination.unlink(missing_ok=True)
+            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,{watermark}"
+            command = [
+                ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
+                "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
+                "-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", maxrate, "-bufsize", "6M",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(destination),
+            ]
+            try:
+                completed = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise ImporterError(f"Video editing failed: {type(error).__name__}") from error
+            if completed.returncode != 0:
+                last_detail = sanitize_error(completed.stderr or completed.stdout or last_detail)
+                continue
+            if destination.exists() and 0 < destination.stat().st_size <= MAX_VIDEO_BYTES:
+                return destination
+        raise ImporterError(f"Video editing failed: {last_detail}" if last_detail != "ffmpeg returned an error" else "Edited video could not be compressed below 95 MB")
 
 
 class Worker:
