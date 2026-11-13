@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
@@ -95,7 +96,7 @@ function Ensure-PortableFfmpeg {
     $downloadedExe = Get-ChildItem -LiteralPath $extractPath -Filter "ffmpeg.exe" -File -Recurse | Select-Object -First 1
     if (!$downloadedExe) { throw "O pacote baixado não possui ffmpeg.exe." }
     New-Item -ItemType Directory -Path $localBin -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $downloadedExe.Directory.FullName "*") -Destination $localBin -Force
+    Copy-Item -Path (Join-Path $downloadedExe.Directory.FullName "*") -Destination $localBin -Force
     $env:PATH = "$localBin;$env:PATH"
     Write-Host "FFmpeg pronto." -ForegroundColor Green
   } finally {
