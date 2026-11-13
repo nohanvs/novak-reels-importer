@@ -70,6 +70,8 @@ class Config:
 class Job:
     id: str
     source_url: str
+    caption: str = HASHTAG
+    headline: str = ""
 
 
 class ApiClient:
@@ -92,10 +94,12 @@ class ApiClient:
             if not isinstance(source_url, str):
                 raise ImporterError("API returned an invalid source URL")
             validate_source_url(source_url)
-            jobs.append(Job(id=job_id, source_url=source_url))
+            caption = raw_job.get("caption") if isinstance(raw_job.get("caption"), str) else HASHTAG
+            headline = raw_job.get("headline") if isinstance(raw_job.get("headline"), str) else ""
+            jobs.append(Job(id=job_id, source_url=source_url, caption=caption[:500], headline=headline[:90]))
         return jobs
 
-    def upload(self, job_id: str, video_path: Path) -> dict[str, Any]:
+    def upload(self, job_id: str, video_path: Path, caption: str) -> dict[str, Any]:
         if not SAFE_JOB_ID_RE.fullmatch(job_id):
             raise ImporterError("Invalid job id")
         file_size = video_path.stat().st_size
@@ -139,7 +143,7 @@ class ApiClient:
         result = self._json_request(
             "PATCH",
             f"/api/worker/importer/jobs/{job_id}",
-            {"status": "processed", "videoUrl": video_url, "caption": HASHTAG},
+            {"status": "processed", "videoUrl": video_url, "caption": caption or HASHTAG},
         )
         if result.get("accepted") is not True:
             raise ImporterError("API did not accept the processed video")
@@ -228,7 +232,7 @@ class VideoDownloader:
 
 
 class VideoEditor:
-    def edit(self, source: Path, destination: Path) -> Path:
+    def edit(self, source: Path, destination: Path, headline: str = "") -> Path:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
             raise ImporterError("ffmpeg is not installed")
@@ -238,11 +242,12 @@ class VideoEditor:
             "drawtext=" + font_option + f"text='{WATERMARK_TEXT}':"
             + "x=(w-text_w)/2:y=h-text_h-48:fontsize=28:fontcolor=white:borderw=3:bordercolor=black"
         )
+        title = _overlay_headline(headline)
         profiles = (("3M", "3.5M", "1080"), ("2M", "2.5M", "720"))
         last_detail = "ffmpeg returned an error"
         for bitrate, maxrate, height in profiles:
             destination.unlink(missing_ok=True)
-            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,{watermark}"
+            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,{title},{watermark}"
             command = [
                 ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
                 "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
@@ -282,8 +287,8 @@ class Worker:
                         workdir = Path(directory)
                         video_path = self.downloader.download(job.source_url, workdir)
                         edited_path = workdir / "edited.mp4"
-                        self.editor.edit(video_path, edited_path)
-                        result = self.client.upload(job.id, edited_path)
+                        self.editor.edit(video_path, edited_path, job.headline)
+                        result = self.client.upload(job.id, edited_path, job.caption)
                         if result.get("accepted") is not True:
                             raise ImporterError("API did not accept the video")
                     succeeded += 1
@@ -396,6 +401,17 @@ def _find_font_file() -> str | None:
 
 def _escape_filter_path(value: str) -> str:
     return value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+
+
+def _overlay_headline(value: str) -> str:
+    clean = re.sub(r"[^\w\s!?À-ÿ]", "", value, flags=re.UNICODE).strip()
+    if len(clean) < 8:
+        clean = "LUANZ7 AO VIVO"
+    clean = clean[:62].replace("'", "\\'").replace(":", "\\:")
+    return (
+        "drawbox=x=0:y=0:w=iw:h=150:color=black@0.55:t=fill:enable='between(t,0,2)',"
+        f"drawtext=text='{clean}':x=(w-text_w)/2:y=45:fontsize=42:fontcolor=white:borderw=2:bordercolor=black:enable='between(t,0,2)'"
+    )
 
 
 def sanitize_error(value: str) -> str:

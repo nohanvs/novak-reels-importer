@@ -5,6 +5,16 @@ const CHANNEL = "luanz7";
 const SEEN_TTL_SECONDS = "7776000";
 const INITIALIZED_KEY = "luanz7:kick:clips:initialized";
 
+function textForClip(clip) {
+  const raw = String(clip.title || "").replace(/\s+/g, " ").trim();
+  const usefulTitle = raw.length >= 8 && raw.length <= 80 && !/^(.)\1+$/.test(raw);
+  const headline = usefulTitle ? raw : "MOMENTO INSANO NA LIVE";
+  const caption = usefulTitle
+    ? `🚨 ${raw}\n\n🔥 Os melhores momentos do LuanZ7 estão aqui.\n\n#luanz7 #kickbrasil #reelsbrasil`
+    : "🚨 Esse momento na live do LuanZ7 foi insano! 👀\n\n🔥 Acompanhe os melhores momentos.\n\n#luanz7 #kickbrasil #reelsbrasil";
+  return { headline: headline.slice(0, 90), caption: caption.slice(0, 500) };
+}
+
 function validClip(clip) {
   return clip && typeof clip.id === "string" && /^clip_[A-Za-z0-9]+$/.test(clip.id)
     && typeof clip.clip_url === "string"
@@ -38,8 +48,9 @@ export default async function handler(request, response) {
     for (const clip of clips) {
       const seen = await redis(["SET", `luanz7:kick:clip:${clip.id}`, "1", "NX", "EX", SEEN_TTL_SECONDS]);
       if (seen !== "OK") continue;
+      const text = textForClip(clip);
       const job = {
-        id: randomUUID(), sourceUrl: clip.clip_url, status: "queued", caption: "#luanz7",
+        id: randomUUID(), sourceUrl: clip.clip_url, status: "queued", caption: text.caption, headline: text.headline,
         createdAt: new Date().toISOString(), rightsConfirmed: true, source: "kick-auto",
         kickClipId: clip.id, kickClipTitle: String(clip.title || "").slice(0, 160), kickClipCreatedAt: clip.created_at || null,
         kickClipDurationSeconds: Number(clip.duration)

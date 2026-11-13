@@ -83,7 +83,7 @@ class FakeClient:
     def claim_jobs(self) -> list[Job]:
         return next(self.batches, [])
 
-    def upload(self, job_id: str, video_path: Path) -> dict[str, object]:
+    def upload(self, job_id: str, video_path: Path, caption: str) -> dict[str, object]:
         self.uploaded.append(job_id)
         return {"accepted": True, "reviewRequired": True}
 
@@ -101,7 +101,7 @@ class FakeDownloader:
 
 
 class FakeEditor:
-    def edit(self, source: Path, destination: Path) -> Path:
+    def edit(self, source: Path, destination: Path, headline: str = "") -> Path:
         destination.write_bytes(source.read_bytes())
         return destination
 
