@@ -5,7 +5,7 @@ import {
   redis,
   saveJob,
   workerAuthorized
-} from "../../../../lib/queue.js";
+} from "../../../lib/queue.js";
 
 const MAX_RETRIES = 10;
 
