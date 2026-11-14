@@ -248,7 +248,8 @@ class VideoEditor:
         last_detail = "ffmpeg returned an error"
         for bitrate, maxrate, height in profiles:
             destination.unlink(missing_ok=True)
-            subtitle_filter = ",ass=filename='captions.ass'" if captions else ""
+            subtitle_path = destination.parent / "captions.ass"
+            subtitle_filter = f",ass=filename='{_escape_filter_path(str(subtitle_path))}'" if captions else ""
             filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease{subtitle_filter},{title},{watermark}"
             command = [
                 ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
