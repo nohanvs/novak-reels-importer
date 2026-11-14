@@ -250,7 +250,9 @@ class VideoEditor:
             destination.unlink(missing_ok=True)
             subtitle_path = destination.parent / "captions.ass"
             subtitle_filter = f",ass=filename='{_escape_filter_path(str(subtitle_path))}'" if captions else ""
-            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease{subtitle_filter},{title},{watermark}"
+            # H.264 requires even dimensions. Some portrait inputs become an
+            # odd width after aspect-ratio scaling, so normalize both axes.
+            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2{subtitle_filter},{title},{watermark}"
             command = [
                 ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
                 "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
