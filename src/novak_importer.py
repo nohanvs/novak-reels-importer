@@ -244,17 +244,23 @@ class VideoEditor:
         )
         title = _overlay_headline(headline)
         captions = LocalCaptioner().create_ass(source, destination.parent)
-        profiles = (("3M", "3.5M", "1080"), ("2M", "2.5M", "720"))
+        profiles = (("3M", "3.5M", 1080, 1920), ("2M", "2.5M", 720, 1280))
         last_detail = "ffmpeg returned an error"
-        for bitrate, maxrate, height in profiles:
+        for bitrate, maxrate, width, height in profiles:
             destination.unlink(missing_ok=True)
             subtitle_path = destination.parent / "captions.ass"
             subtitle_filter = f",ass=filename='{_escape_filter_path(str(subtitle_path))}'" if captions else ""
-            # H.264 requires even dimensions. Some portrait inputs become an
-            # odd width after aspect-ratio scaling, so normalize both axes.
-            filter_graph = f"scale=-2:'min({height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2{subtitle_filter},{title},{watermark}"
+            # Use the same clip as a blurred full-screen background, while the
+            # original stays centered and uncropped. This makes Twitch's
+            # landscape clips look native in a vertical Reel.
+            filter_graph = (
+                f"[0:v]split=2[bgsrc][fgsrc];"
+                f"[bgsrc]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},boxblur=20:1[bg];"
+                f"[fgsrc]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=1,setsar=1{subtitle_filter},{title},{watermark}[video]"
+            )
             command = [
-                ffmpeg, "-y", "-i", str(source), "-vf", filter_graph,
+                ffmpeg, "-y", "-i", str(source), "-filter_complex", filter_graph, "-map", "[video]", "-map", "0:a?",
                 "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
                 "-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", maxrate, "-bufsize", "6M",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(destination),
