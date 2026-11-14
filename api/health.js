@@ -33,7 +33,7 @@ export default async function handler(request, response) {
     if (String(ping).toUpperCase() !== "PONG") throw new Error("Redis ping failed");
     return response.status(200).json({
       ok: true,
-      message: "Configuração básica do NovaK Reels está pronta.",
+      message: "Configuração básica do Facada Reels está pronta.",
       storage: "connected",
       blobConfigured,
       blobAuth: process.env.BLOB_STORE_ID ? "oidc" : "token",
@@ -42,7 +42,7 @@ export default async function handler(request, response) {
   } catch {
     return response.status(503).json({
       ok: false,
-      error: "Redis não está conectado. Verifique as variáveis UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN."
+      error: "Redis não está conectado. Verifique a integração Upstash do projeto."
     });
   }
 }
