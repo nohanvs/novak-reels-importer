@@ -10,8 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-LOGGER = logging.getLogger("luanz7_publisher")
-HASHTAG = "#luanz7"
+LOGGER = logging.getLogger("facada_publisher")
+HASHTAG = "#facadarp"
 
 
 class PublisherError(RuntimeError):
@@ -66,7 +66,7 @@ class HttpJson:
 
     def request(self, method: str, url: str, fields: dict[str, str] | None = None, headers: dict[str, str] | None = None) -> dict:
         body = None
-        request_headers = {"Accept": "application/json", "User-Agent": "Luanz7-Reels-Publisher/1.0"}
+        request_headers = {"Accept": "application/json", "User-Agent": "Facada-Reels-Publisher/1.0"}
         if headers:
             request_headers.update(headers)
         if fields is not None:

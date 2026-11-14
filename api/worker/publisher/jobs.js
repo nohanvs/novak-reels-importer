@@ -56,7 +56,7 @@ export default async function handler(request, response) {
       jobs: [{
         id: job.id,
         videoUrl: job.videoUrl,
-        caption: job.caption || "#luanz7",
+        caption: job.caption || "#facadarp",
         publishedAccounts: Array.isArray(job.publishedAccounts) ? job.publishedAccounts : []
       }]
     });

@@ -52,7 +52,7 @@ export default async function handler(request, response) {
     job.status = "processing";
     job.claimedAt = new Date().toISOString();
     await saveJob(job);
-    return response.status(200).json({ jobs: [{ id: job.id, sourceUrl: job.sourceUrl, caption: job.caption || "#luanz7", headline: job.headline || "" }] });
+    return response.status(200).json({ jobs: [{ id: job.id, sourceUrl: job.sourceUrl, caption: job.caption || "#facadarp", headline: job.headline || "" }] });
   } catch {
     return response.status(503).json({ error: "A fila de importação está indisponível." });
   }

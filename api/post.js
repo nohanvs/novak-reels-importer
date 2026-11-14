@@ -38,7 +38,7 @@ export default async function handler(request, response) {
       id,
       sourceUrl,
       status: "queued",
-      caption: "#luanz7",
+      caption: "#facadarp",
       createdAt: new Date().toISOString(),
       rightsConfirmed: true
     };

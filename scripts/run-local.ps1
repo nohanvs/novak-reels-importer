@@ -3,11 +3,11 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$ConfigPath = Join-Path $Root ".luanz7-local.json"
+$ConfigPath = Join-Path $Root ".facada-local.json"
 $VercelEnvPath = Join-Path $Root ".vercel.local.env"
 $VercelScope = "nohanvsff-3505s-projects"
-$ProjectName = "novak-reels-importer"
-$ApiBaseUrl = "https://novak-reels-importer.vercel.app"
+$ProjectName = "facada-reels-importer"
+$ApiBaseUrl = "https://facada-reels-importer.vercel.app"
 $PollSeconds = 30
 $RateLimitCooldownSeconds = 1800
 
@@ -85,7 +85,7 @@ function Ensure-PortableFfmpeg {
   if (Test-Path $localExe) { $env:PATH = "$localBin;$env:PATH"; return }
   if (Test-Command "ffmpeg") { return }
 
-  $tempRoot = Join-Path $env:TEMP ("luanz7-ffmpeg-" + [guid]::NewGuid().ToString("N"))
+  $tempRoot = Join-Path $env:TEMP ("facada-ffmpeg-" + [guid]::NewGuid().ToString("N"))
   $zipPath = Join-Path $tempRoot "ffmpeg.zip"
   $extractPath = Join-Path $tempRoot "extract"
   try {
@@ -117,7 +117,7 @@ function Ensure-FreeCaptionEngine([string]$PythonPath) {
   }
 }
 
-Write-Host "=== Luanz7 Reels - executor local para Windows ===" -ForegroundColor Cyan
+Write-Host "=== Facada Reels - executor local para Windows ===" -ForegroundColor Cyan
 Ensure-PortableFfmpeg
 if (!(Test-Command "node") -or !(Test-Command "npm")) {
   throw "Node.js LTS não está disponível. Instale em https://nodejs.org/ e abra este arquivo novamente."
@@ -138,9 +138,9 @@ Ensure-FreeCaptionEngine $Python
 & npm install --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar as dependências Node." }
 if (!(Pull-VercelEnvironment)) { throw "Não consegui baixar as variáveis do Vercel." }; Ensure-ImporterToken; Ensure-BlobToken; Get-InstagramAccounts
 
-Write-Host "Executor ativo. Clips novos da Kick serão adicionados automaticamente; não feche esta janela." -ForegroundColor Green
+Write-Host "Executor ativo. Os melhores clips da Twitch do dia anterior serão adicionados uma vez por dia; não feche esta janela." -ForegroundColor Green
 while ($true) {
-  Write-Host ("[{0}] Verificando clips novos da Kick..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan; & node scripts/scan-kick.mjs
+  Write-Host ("[{0}] Verificando melhores clips da Twitch..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan; & node scripts/scan-twitch.mjs
   Write-Host ("[{0}] Verificando fila de importação..." -f (Get-Date -Format "HH:mm:ss")) -ForegroundColor Cyan; & $Python -m novak_importer
   if (In-Cooldown) { Write-Host "Publicação em pausa por limite da Meta." -ForegroundColor Yellow }
   else { Write-Host ("[{0}] Verificando fila de publicação..." -f (Get-Date -Format "HH:mm:ss")); & $Python -m novak_publisher; if ($LASTEXITCODE -eq 4) { Start-Cooldown } }

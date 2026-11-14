@@ -11,6 +11,7 @@ build/
 .vercel.local.env
 .novak-local.json
 .luanz7-local.json
+.facada-local.json
 .vercel/
 node_modules/
 downloads/

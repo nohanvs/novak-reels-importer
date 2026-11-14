@@ -1,16 +1,20 @@
-# Luanz7 Reels
+# Facada Reels
 
-Site mínimo para postar um link do TikTok, de um clip da Twitch ou de um clip/VOD da Kick. O projeto usa Vercel Functions para a fila, Upstash Redis para armazenamento dos trabalhos, Vercel Blob para os vídeos processados e GitHub Actions para baixar, aplicar a marca d'água e publicar Reels no Instagram.
+Sistema para publicar clips da Twitch do Facada. O projeto usa Vercel Functions para a fila, Upstash Redis para armazenamento dos trabalhos, Vercel Blob para os vídeos processados e o executor local para baixar, editar e publicar Reels no Instagram.
 
 ## O que acontece quando você toca em Postar
 
 1. O site valida o link HTTPS e exige a senha de postagem e a confirmação de autorização.
 2. O link entra na fila persistente no Upstash Redis.
-3. O worker baixa o vídeo com `yt-dlp`, comprime para até 95 MB, nivela o áudio, aplica a marca d'água `kick.com/luanz7`, uma abertura com título e legendas em português geradas localmente.
-4. O vídeo processado é enviado ao Vercel Blob público e recebe a hashtag `#luanz7`.
+3. O worker baixa o vídeo com `yt-dlp`, comprime para até 95 MB, nivela o áudio, aplica a marca d'água `twitch.tv/facada`, uma abertura com título e legendas em português geradas localmente.
+4. O vídeo processado é enviado ao Vercel Blob público e recebe a hashtag `#facadarp`.
 5. O worker de publicação envia o Reel à API do Instagram e registra o resultado na fila.
 
-O executor local monitora os clips novos da Kick, processa a fila e publica com intervalo seguro. Deixe `INICIAR_LOCAL.bat` aberto para o monitor automático continuar funcionando. Na primeira abertura ele instala automaticamente o FFmpeg e o motor livre de legendas; o modelo de idioma é baixado uma vez no primeiro vídeo. Se essa etapa estiver sem internet, o vídeo continua sendo processado sem legenda em vez de falhar.
+O executor local seleciona diariamente até três clips com mais visualizações do dia anterior na Twitch, processa a fila e publica com intervalo seguro. Reiniciar a janela não reposta os mesmos clips. Deixe `INICIAR_LOCAL.bat` aberto para o processo continuar funcionando. Na primeira abertura ele instala automaticamente o FFmpeg e o motor livre de legendas; o modelo de idioma é baixado uma vez no primeiro vídeo. Se essa etapa estiver sem internet, o vídeo continua sendo processado sem legenda em vez de falhar.
+
+## Monitor automático da Twitch
+
+No Vercel do projeto Facada, adicione também `TWITCH_CLIENT_ID` e `TWITCH_CLIENT_SECRET`. Eles são gratuitos e pertencem a um app criado no painel de desenvolvedores da Twitch. O sistema usa uma credencial de aplicativo apenas para consultar clips públicos e gera o token automaticamente; nunca coloque o segredo no código ou no chat. A API oficial exige token e Client ID para consultar clips públicos.
 
 Use somente vídeos próprios, autorizados ou de domínio público. A pessoa que envia o link é responsável por ter direito de reutilizá-lo e publicá-lo. A marca d'água não comprova autorização. O token de publicação fica apenas nos segredos do GitHub, nunca no navegador.
 

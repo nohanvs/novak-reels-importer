@@ -23,8 +23,8 @@ TWITCH_HOST_RE = re.compile(r"(^|\.)twitch\.tv$", re.IGNORECASE)
 KICK_HOST_RE = re.compile(r"(^|\.)kick\.com$", re.IGNORECASE)
 KICK_CLIPS_HOST_RE = re.compile(r"^clips\.kick\.com$", re.IGNORECASE)
 SAFE_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-WATERMARK_TEXT = "kick.com/luanz7"
-HASHTAG = "#luanz7"
+WATERMARK_TEXT = "twitch.tv/facada"
+HASHTAG = "#facadarp"
 
 LOGGER = logging.getLogger("novak_importer")
 
@@ -280,7 +280,7 @@ class LocalCaptioner:
             LOGGER.warning("Legendas locais indisponíveis: o motor gratuito ainda não foi instalado")
             return False
         try:
-            cache_root = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "Luanz7Reels" / "whisper"
+            cache_root = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "FacadaReels" / "whisper"
             cache_root.mkdir(parents=True, exist_ok=True)
             model = WhisperModel("base", device="cpu", compute_type="int8", download_root=str(cache_root))
             segments, _info = model.transcribe(str(source), language="pt", beam_size=3, vad_filter=True)
@@ -438,13 +438,13 @@ def _escape_filter_path(value: str) -> str:
 def _overlay_headline(value: str) -> str:
     clean = re.sub(r"[^\w\s!?À-ÿ]", "", value, flags=re.UNICODE).strip()
     if len(clean) < 8:
-        clean = "LUANZ7 AO VIVO"
+        clean = "FACADA AO VIVO"
     clean = clean[:62].replace("'", "\\'").replace(":", "\\:")
     return (
         "drawbox=x=0:y=0:w=iw:h=166:color=black@0.62:t=fill:enable='between(t,0,2.4)',"
         "drawbox=x=0:y=0:w=12:h=166:color=0x74ff00:t=fill:enable='between(t,0,2.4)',"
         f"drawtext=text='{clean}':x=(w-text_w)/2:y=38:fontsize=42:fontcolor=white:borderw=2:bordercolor=black:enable='between(t,0,2.4)',"
-        "drawtext=text='#LUANZ7':x=(w-text_w)/2:y=105:fontsize=24:fontcolor=0x74ff00:borderw=1:bordercolor=black:enable='between(t,0,2.4)'"
+        "drawtext=text='#FACADARP':x=(w-text_w)/2:y=105:fontsize=24:fontcolor=0x9146ff:borderw=1:bordercolor=black:enable='between(t,0,2.4)'"
     )
 
 
