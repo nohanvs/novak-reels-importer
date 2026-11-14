@@ -37,6 +37,14 @@ export default async function handler(request, response) {
     return response.status(405).json({ error: "Método não permitido." });
   }
   try {
+    const requestedId = String(request.query?.id || "");
+    if (requestedId) {
+      if (!safeJobId(requestedId)) return response.status(400).json({ error: "ID de trabalho inválido." });
+      const job = await readJob(requestedId);
+      return job
+        ? response.status(200).json({ ok: true, job: safeSummary(job) })
+        : response.status(404).json({ error: "Trabalho não encontrado." });
+    }
     const result = {};
     for (const [name, key] of Object.entries(queues)) {
       const ids = await redis(["LRANGE", key, "0", "19"]);
