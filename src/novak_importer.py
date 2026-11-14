@@ -283,7 +283,27 @@ class LocalCaptioner:
             cache_root = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "FacadaReels" / "whisper"
             cache_root.mkdir(parents=True, exist_ok=True)
             model = WhisperModel("base", device="cpu", compute_type="int8", download_root=str(cache_root))
-            segments, _info = model.transcribe(str(source), language="pt", beam_size=3, vad_filter=True)
+            # Newer PyAV builds removed metadata_errors from av.open while
+            # faster-whisper still supplies it. Keep this local compatibility
+            # shim until upstream versions converge.
+            import av
+            original_open = av.open
+
+            def open_compat(*args: Any, **kwargs: Any) -> Any:
+                try:
+                    return original_open(*args, **kwargs)
+                except TypeError as error:
+                    if "metadata_errors" not in kwargs or "metadata_errors" not in str(error):
+                        raise
+                    retry_kwargs = dict(kwargs)
+                    retry_kwargs.pop("metadata_errors", None)
+                    return original_open(*args, **retry_kwargs)
+
+            av.open = open_compat
+            try:
+                segments, _info = model.transcribe(str(source), language="pt", beam_size=3, vad_filter=True)
+            finally:
+                av.open = original_open
             entries = []
             for segment in segments:
                 text = _caption_text(segment.text)
