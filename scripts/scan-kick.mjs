@@ -9,8 +9,9 @@ if (!baseUrl || token.length < 32) {
     const response = await fetch(`${baseUrl}/api/worker/kick/scan`, { headers: { Authorization: `Bearer ${token}` } });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    if (payload.initialized) console.log(`Monitor da Kick pronto: ${payload.seen} clips atuais marcados; os próximos serão automáticos.`);
-    else if (payload.queued) console.log(`Monitor da Kick: ${payload.queued} clip(s) novo(s) entraram na fila.`);
+    if (payload.queued) console.log(`Monitor da Kick: ${payload.queued} melhor(es) clip(s) de ${payload.day} entrou/entraram na fila.`);
+    else if (payload.alreadySelected) console.log(`Monitor da Kick: os melhores clips de ${payload.day} já foram selecionados.`);
+    else console.log(`Monitor da Kick: nenhum clip elegível encontrado para ${payload.day}.`);
   } catch (error) {
     process.stderr.write(`Monitor da Kick falhou: ${String(error.message || error).slice(0, 300)}\n`);
     process.exitCode = 1;
